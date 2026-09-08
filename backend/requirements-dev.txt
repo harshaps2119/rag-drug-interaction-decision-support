@@ -1,0 +1,4 @@
+# Development/testing-only dependencies.
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+respx==0.21.1
+pyflakes==3.2.0

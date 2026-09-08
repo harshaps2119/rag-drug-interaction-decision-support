@@ -1,0 +1,473 @@
+/* ==========================================================================
+   Drug Interaction Decision Support — styles
+   ==========================================================================
+   Design goal: a clean, professional, clinical-decision-support look —
+   not a generic AI chatbot. Calm, low-saturation palette; clear
+   information hierarchy; generous spacing; strong focus states for
+   keyboard users.
+   ========================================================================== */
+
+:root {
+  --color-bg: #f7f9fb;
+  --color-surface: #ffffff;
+  --color-border: #d7dee4;
+  --color-text: #1b2733;
+  --color-text-muted: #55636f;
+  --color-primary: #0b5a86;
+  --color-primary-dark: #073f5e;
+  --color-focus: #0b5a86;
+
+  --tone-strong-bg: #fdecec;
+  --tone-strong-border: #e0a3a3;
+  --tone-strong-text: #7a1f1f;
+
+  --tone-moderate-bg: #fdf3e3;
+  --tone-moderate-border: #e2c07f;
+  --tone-moderate-text: #6b4a0c;
+
+  --tone-neutral-bg: #eef2f5;
+  --tone-neutral-border: #c3cdd5;
+  --tone-neutral-text: #3a4650;
+
+  --tone-warning-bg: #fdf3e3;
+  --tone-warning-border: #e2c07f;
+  --tone-warning-text: #6b4a0c;
+
+  --tone-error-bg: #f5eaea;
+  --tone-error-border: #cfa5a5;
+  --tone-error-text: #5c2323;
+
+  --radius: 8px;
+  --shadow-sm: 0 1px 3px rgba(20, 30, 40, 0.08);
+  --font-sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+a {
+  color: var(--color-primary);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.home-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.page-header h1 {
+  font-size: 1.9rem;
+  margin-bottom: 0.35rem;
+  color: var(--color-primary-dark);
+}
+
+.page-header .subtitle {
+  color: var(--color-text-muted);
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+/* ---- Safety notice ---- */
+.safety-notice {
+  background: var(--tone-neutral-bg);
+  border: 1px solid var(--tone-neutral-border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1.1rem;
+  margin: 1.25rem 0 1.75rem;
+  font-size: 0.92rem;
+  color: var(--tone-neutral-text);
+}
+.safety-notice p {
+  margin: 0;
+}
+
+/* ---- Sections / cards ---- */
+.checker-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.checker-section h2 {
+  margin-top: 0;
+  font-size: 1.3rem;
+  color: var(--color-primary-dark);
+}
+
+.section-hint {
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+  margin-top: -0.5rem;
+}
+
+.drug-form {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+}
+
+.drug-form .btn-primary {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+@media (max-width: 620px) {
+  .drug-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Inputs ---- */
+.drug-input,
+.drug-search {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.drug-input label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.drug-input input {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.drug-input input:focus {
+  border-color: var(--color-primary);
+}
+
+.drug-search-suggestions {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.drug-search-suggestions .suggestion,
+.drug-search-suggestions .suggestion-status {
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.94rem;
+  cursor: pointer;
+}
+
+.drug-search-suggestions .suggestion-status {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.drug-search-suggestions .suggestion.active,
+.drug-search-suggestions .suggestion:hover {
+  background: var(--tone-neutral-bg);
+}
+
+.suggestion-meta {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+/* ---- Buttons ---- */
+.btn-primary,
+.btn-secondary {
+  font: inherit;
+  border-radius: var(--radius);
+  padding: 0.65rem 1.3rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+}
+.btn-primary:disabled {
+  background: #a9bcc7;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+.btn-secondary:hover {
+  background: var(--tone-neutral-bg);
+}
+
+/* ---- Loading / error states ---- */
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  color: var(--color-text-muted);
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-message {
+  margin-top: 1rem;
+  background: var(--tone-error-bg);
+  border: 1px solid var(--tone-error-border);
+  color: var(--tone-error-text);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+}
+
+.error-message .btn-secondary {
+  margin-top: 0.6rem;
+}
+
+.duplicate-warning {
+  color: var(--tone-warning-text);
+  font-size: 0.9rem;
+}
+
+/* ---- Interaction result ---- */
+.interaction-result {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.assessment-badge {
+  display: inline-block;
+  border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid;
+}
+
+.assessment-badge .assessment-label {
+  font-weight: 700;
+  font-size: 1.02rem;
+}
+
+.assessment-badge .assessment-description {
+  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+
+.tone-strong {
+  background: var(--tone-strong-bg);
+  border-color: var(--tone-strong-border);
+  color: var(--tone-strong-text);
+}
+.tone-moderate {
+  background: var(--tone-moderate-bg);
+  border-color: var(--tone-moderate-border);
+  color: var(--tone-moderate-text);
+}
+.tone-neutral {
+  background: var(--tone-neutral-bg);
+  border-color: var(--tone-neutral-border);
+  color: var(--tone-neutral-text);
+}
+.tone-warning {
+  background: var(--tone-warning-bg);
+  border-color: var(--tone-warning-border);
+  color: var(--tone-warning-text);
+}
+.tone-error {
+  background: var(--tone-error-bg);
+  border-color: var(--tone-error-border);
+  color: var(--tone-error-text);
+}
+
+.fallback-note {
+  background: var(--tone-neutral-bg);
+  border: 1px solid var(--tone-neutral-border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  font-size: 0.92rem;
+  color: var(--tone-neutral-text);
+}
+
+.result-section {
+  margin-top: 1.1rem;
+}
+.result-section h3 {
+  font-size: 1rem;
+  margin-bottom: 0.3rem;
+  color: var(--color-primary-dark);
+}
+
+.result-safety-notice {
+  margin-top: 1.25rem;
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* ---- Evidence cards ---- */
+.evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.evidence-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.evidence-card-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--color-surface);
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.evidence-card-header:hover {
+  background: var(--tone-neutral-bg);
+}
+
+.evidence-id {
+  font-weight: 700;
+  color: var(--color-primary-dark);
+}
+
+.evidence-classification {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+}
+
+.evidence-drug {
+  margin-left: auto;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.chevron {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.evidence-card-body {
+  padding: 0.75rem 0.9rem 1rem;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.94rem;
+}
+
+.evidence-text {
+  white-space: pre-wrap;
+}
+
+/* ---- Multi-drug checker ---- */
+.multi-drug-add {
+  display: flex;
+  gap: 0.6rem;
+  align-items: end;
+}
+.multi-drug-add .drug-input {
+  flex: 1;
+}
+
+.drug-chip-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0.9rem 0;
+}
+
+.drug-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--tone-neutral-bg);
+  border: 1px solid var(--tone-neutral-border);
+  border-radius: 999px;
+  padding: 0.3rem 0.4rem 0.3rem 0.85rem;
+  font-size: 0.9rem;
+}
+
+.drug-chip button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+  padding: 0.1rem 0.4rem;
+  border-radius: 50%;
+}
+.drug-chip button:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.multi-results {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.pair-result h3 {
+  margin-bottom: 0.25rem;
+}
