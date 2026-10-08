@@ -1,171 +1,178 @@
-# Drug–Drug Interaction (DDI) RAG Decision Support System
+# RAG-Based Drug–Drug Interaction Decision Support System
 
-An evidence-grounded, citation-backed drug interaction checker built with a
-hybrid **structured lookup + Retrieval-Augmented Generation (RAG)**
-architecture. Built as an academic + portfolio project for Hospital/Health IT.
+An evidence-grounded RAG prototype for retrieving drug-label evidence and generating constrained explanations for potential drug–drug interactions.
 
-> ⚠️ **Not a medical device. Not for autonomous prescribing.**
-> This is an educational/clinical-information prototype. It surfaces
-> evidence from RxNorm and DailyMed (FDA structured product labels) and uses
-> an LLM only to *explain retrieved evidence* — never to invent facts.
-> Clinical judgment by a qualified professional is always required.
+![Application Overview](docs/images/application-overview.png)
 
-## Status
+## Overview
 
-🚧 **Phase 9 of 15 complete: React frontend.**
-See `docs/how-it-was-built.md` for the full build log, `docs/frontend.md`
-for the frontend architecture, `frontend/README.md` for how to run it,
-`docs/api.md` for the API reference, `docs/security.md` for the
-hardening/privacy design, `docs/testing.md` for the project-wide testing
-approach, and `docs/{rag,embeddings,retrieval,llm,safety}.md` for the
-retrieval/LLM layers underneath it.
+Clinical decision support systems require extreme accuracy. General-purpose Large Language Models (LLMs) are unreliable for drug–drug interactions because they can hallucinate severity, invent interactions, or fail to state the source of their claims.
 
-| Phase | Description | Status |
-|---|---|---|
-| 1 | Project setup | ✅ Done |
-| 2 | RxNorm integration | ✅ Done |
-| 3 | DailyMed integration | ✅ Done |
-| 4 | Local knowledge base | ✅ Done |
-| 5 | Embeddings + ChromaDB | ✅ Done |
-| 6 | DDI retrieval & evidence assessment | ✅ Done |
-| 7 | xAI Grok LLM + grounded explanation + safety validation | ✅ Done |
-| 8 | Backend hardening, rate limiting, audit logging | ✅ Done |
-| 9 | React frontend | ✅ Done |
-| 10 | (merged into Phase 8 — see note below) | — |
-| 11 | Multi-drug checking | ✅ Done (backend in Phase 8, UI in Phase 9) |
-| 12 | Testing | ⏳ Ongoing every phase — see `docs/testing.md` |
-| 13 | Evaluation | ⏳ Pending |
-| 14 | Documentation | ⏳ Ongoing every phase |
-| 15 | Final cleanup | ⏳ Pending |
+This system demonstrates a different approach. By integrating **structured API lookups** (RxNorm) with **Retrieval-Augmented Generation** (ChromaDB over DailyMed structured product labels), the system provides interaction checks that are entirely bounded by official documentation.
 
-**Notes on phase numbering:** this project's original 15-phase plan
-named "FastAPI backend" and "Multiple-drug checking" as later, separate
-phases. In practice, Phase 8's own instructions required a working
-FastAPI backend with both a two-drug and a multi-drug endpoint to
-implement rate limiting and audit logging meaningfully against — there
-was no way to build request hardening without requests to harden. Both
-are genuinely complete now, tracked honestly here rather than re-listed
-as "pending" work that's already done. Phase 8 (as this conversation
-numbers it) also already covers the grounding-validator work the
-original plan's separate "Phase 8: Safety/validation layer" referred to.
+### Key Design Principle
 
-## Architecture (high level)
+> **The LLM is the explanation layer — not the source of truth.**
 
-```
-User → React Frontend → FastAPI Backend → Drug Name Normalization (RxNorm)
-     → RAG Retriever (ChromaDB, evidence from DailyMed labels)
-     → LLM (xAI Grok by default; Gemini optional) explains ONLY the retrieved evidence
-     → Safety/Validation Layer → Final Answer + Citations
+**AI explains the evidence. The evidence sets the boundary.**
+- Drug identity is normalized strictly through RxNorm before any explanation happens.
+- Pair-specific evidence is mathematically distinguished from generalized supporting evidence.
+- A deterministic grounding validator constrains the generated LLM claims against the retrieved evidence IDs.
+- Insufficient evidence triggers an automatic fallback rather than a hallucinated interaction claim.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    User([User]) --> UI[React Frontend]
+    UI --> API[FastAPI Backend]
+    
+    API --> Norm[RxNorm Normalization]
+    Norm --> Ret[DailyMed Evidence Retrieval]
+    
+    Ret --> SQLite[(SQLite Source of Truth)]
+    Ret --> Chroma[(ChromaDB Semantic Retrieval)]
+    
+    Chroma --> Eval[DDI Evidence Assessment]
+    Eval --> LLM[Optional LLM Explanation]
+    LLM --> Val[Grounding Validator]
+    
+    Val -->|Pass| Resp1[Evidence-backed Response]
+    Val -->|Fail / Insufficient| Resp2[Evidence-only Fallback]
+    
+    Resp1 --> UI
+    Resp2 --> UI
 ```
 
-Full diagram: `docs/architecture.md` (added in Phase 14, stub now).
+## Features
 
-## Project structure
+- **Medication Normalization:** Maps arbitrary user input to RxCUIs using the NIH RxNorm API.
+- **Drug-Label Evidence Retrieval:** Fetches official structured product labels from DailyMed.
+- **Semantic Retrieval:** Uses `sentence-transformers` and ChromaDB to perform vector search on chunked label text.
+- **Pair-Aware Evidence Assessment:** Accurately classifies whether text describes a specific drug pair interacting, or merely general properties of a single drug.
+- **Evidence-Backed Explanations:** Formulates a readable explanation of the interaction mechanism strictly based on retrieved context.
+- **Grounding Validation:** Strictly enforces that all LLM claims map directly to retrieved evidence chunks.
+- **Evidence-Only Fallback:** If the LLM goes offline or fails validation, the system safely falls back to displaying raw evidence.
+- **Multi-Drug Checking:** Capable of checking complex multi-drug regimens in a single request.
+- **Modular LLM Provider Architecture:** Pluggable support for OpenRouter, xAI (Grok), Gemini, and "none" (evidence-only mode).
+- **Modern Stack:** React + Vite interface and a FastAPI Python backend.
+
+## Evidence Flow
+
+1. **RxNorm** → Identify and normalize medication input.
+2. **DailyMed** → Retrieve official FDA drug-label evidence.
+3. **SQLite** → Local source-of-truth evidence storage.
+4. **ChromaDB** → Semantic retrieval of relevant label sections.
+5. **DDI Assessment** → Classify evidence status (e.g., pair-specific vs. supporting).
+6. **Grounding Validator** → Constrain model output to verified claims.
+7. **LLM** → Formulate an explanation of the retrieved evidence.
+
+## Example
+
+Checking for an interaction between **Warfarin** and **Ibuprofen**.
+
+The system retrieves DailyMed label evidence highlighting that NSAIDs (like Ibuprofen) can increase the anticoagulant effect of Warfarin and increase the risk of serious bleeding. The LLM summarizes this mechanism and the frontend presents both the explanation and the underlying *EvidenceCard* containing the exact retrieved excerpt.
+
+![Evidence Result](docs/images/evidence-result.png)
+
+## Tech Stack
+
+- **Backend:** Python, FastAPI, Pydantic, SQLAlchemy, pytest
+- **Frontend:** React, Vite, vitest
+- **Data/Retrieval:** SQLite, ChromaDB, `sentence-transformers`
+- **External APIs:** RxNorm, DailyMed
+- **LLM Integrations:** OpenRouter, xAI, Google Gemini
+
+## Project Structure
 
 ```
 drug-interaction-rag/
-├── backend/            FastAPI app, RAG pipeline, services, tests
-├── frontend/            React + Vite UI
-├── docs/                 Architecture, build log, report, viva prep
-├── scripts/              Setup, ingestion, pipeline test scripts
-├── .env.example        Copy to .env and fill in your own keys
-└── .gitignore
+├── backend/            # FastAPI app, RAG pipeline, services, test suite
+├── frontend/           # React + Vite UI, frontend test suite
+├── docs/               # Architecture, build logs, API references
+├── scripts/            # Setup, ingestion, pipeline test scripts
+├── .env.example        # Environment variable template
+├── .gitignore
+└── README.md
 ```
 
-## Quick start (once later phases add runnable code)
+## Running Locally
 
-### Backend
+### Backend Setup
+
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt
-cp ../.env.example ../.env       # then add XAI_API_KEY (xAI is the default provider)
 
-# Initialize the local knowledge base (pure local SQLite, no network needed)
+# Create your .env file
+cp ../.env.example ../.env
+```
+
+Open `../.env` and supply your LLM API keys. **Never commit this file.** (Use `LLM_PROVIDER=none` to test locally without an API key).
+
+```bash
+# Initialize local SQLite knowledge base
 python ../scripts/setup_data.py
 
-# Ingest the dev seed set (real network calls to RxNorm + DailyMed)
+# Ingest sample labels
 python ../scripts/ingest_labels.py --seed
 
-# Build the vector index (real network call to download the embedding model)
+# Build the vector index
 python ../scripts/build_vector_index.py
 
-uvicorn app.main:app --reload --port 8000
+# Start the backend server
+uvicorn app.main:app --reload --port 8001
 ```
 
-Then, with the server running:
-```bash
-curl http://localhost:8000/api/health
+### Frontend Setup
 
-curl -X POST http://localhost:8000/api/interaction/check \
-  -H "Content-Type: application/json" \
-  -d '{"drug_a": "warfarin", "drug_b": "ibuprofen"}'
-```
-Or visit http://localhost:8000/docs for interactive Swagger UI. Full
-API reference: `docs/api.md`.
-
-Run the test suite (offline — mocked HTTP + real in-memory SQLite/ChromaDB + fake LLM client, no API keys needed):
-```bash
-cd backend
-pytest -v
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-cp .env.example .env    # only needed if your backend isn't at localhost:8000
-npm run dev
-```
-Open the URL Vite prints (typically `http://localhost:5173`) in your
-browser, with the backend (above) running alongside it. Full frontend
-docs: `frontend/README.md` and `docs/frontend.md`.
-
-Run the frontend test suite (mocked API, no backend needed):
-```bash
-cd frontend
-npm test
-npm run build   # production build
-npm run lint     # static analysis
-```
-
-### Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Data sources
+Navigate to `http://localhost:5173/` in your browser.
 
-- **RxNorm** (NLM, public API, no key) — drug name normalization, RxCUI,
-  brand/generic mapping. https://lhncbc.nlm.nih.gov/RxNav/APIs/RxNormAPIs.html
-- **DailyMed** (NLM/FDA, public API, no key) — Structured Product Labels:
-  interactions, contraindications, warnings, pharmacology.
-  https://dailymed.nlm.nih.gov/dailymed/webservices-help/v2/
+## API
 
-Neither requires an API key. The default explanation layer needs an
-**xAI API key** (`XAI_API_KEY`). Gemini is retained as an optional provider
-when `LLM_PROVIDER=gemini` and `GEMINI_API_KEY` are configured.
+The backend exposes the following primary endpoints:
 
-See `docs/data-sources.md` for full endpoint documentation, LOINC section
-codes used, and known coverage limitations of both sources.
+- `GET /api/health` - System health and component status.
+- `GET /api/drugs/search?q={query}` - Search and normalize a drug via RxNorm.
+- `POST /api/interaction/check` - Check a 2-drug pair for interactions.
+- `POST /api/interaction/check-multiple` - Check a multi-drug regimen (up to 10 drugs).
 
-## Safety principles this system follows
+Interactive Swagger documentation is available at `http://localhost:8001/docs` when the backend is running.
 
-1. Never claims "no interaction exists" — only "no interaction identified
-   in the searched sources," which is a meaningfully different (and honest)
-   statement.
-2. Every claim is traceable to a retrieved source chunk, shown to the user.
-3. Severity is only shown if the underlying source actually states it —
-   never inferred or invented.
-4. If retrieval finds nothing relevant, the system says so rather than
-   letting the LLM fill the gap from its own training data.
+## Testing
 
-See `docs/limitations.md` (Phase 14) for the full list of known gaps.
+This project maintains a comprehensive test suite to ensure safety and logic consistency.
 
-## License
+- **Backend:** 329 tests passing (`pytest`)
+- **Frontend:** 58 tests passing (`npm test`)
+- **Linting:** Passing (`npm run lint`)
+- **Build:** Production builds successfully (`npm run build`)
 
-Add your preferred license (e.g., MIT) in `LICENSE` before publishing.
+## Safety and Limitations
+
+**This is a prototype / academic decision-support system.**
+- **Not a medical device.**
+- **Not a prescribing system.**
+- **Not a substitute for clinical judgment.**
+- Evidence coverage in this prototype is limited to the local seed set and DailyMed retrieval logic.
+- **Absence of retrieved evidence does not prove the absence of an interaction.**
+- Severity is only reported when explicitly supported by the retrieved evidence.
+- The LLM is *not* the interaction detection source of truth; it merely explains what the RAG pipeline found.
+- Real-world clinical and regulatory validation would be required before any production deployment.
+
+## Future Improvements
+
+- Broader evidence coverage across diverse interaction knowledge sources.
+- Improved asynchronous ingestion and update workflows for drug labels.
+- Larger-scale validation against known clinical interaction datasets.
+- Clinical expert evaluation of explanation accuracy.
+- Production security, persistent rate limiting, and observability.
+- Deployment hardening.

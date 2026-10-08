@@ -1,0 +1,13 @@
+.env
+.venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+backend/data/
+frontend/
+brag-output/
+.git/
+.agents/
+node_modules/
+dist/
