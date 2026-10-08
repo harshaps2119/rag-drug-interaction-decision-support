@@ -26,7 +26,7 @@ from app.core.request_id import get_request_id
 from app.db import get_session_factory
 from app.rag.embeddings import SentenceTransformerEmbeddingModel
 from app.rag.vector_store import get_collection
-from app.services.llm_service import GeminiLLMClient
+from app.services.llm_service import get_configured_llm_client
 
 _embedding_model = None
 _chroma_collection = None
@@ -58,7 +58,22 @@ def get_chroma_collection():
 
 
 def get_llm_client():
-    return GeminiLLMClient()
+    try:
+        return get_configured_llm_client()
+    except Exception as exc:
+        from app.exceptions import LLMServiceError, LLMServiceUnavailableError
+
+        class FailingLLMClient:
+            def __init__(self, err):
+                self._err = err
+                self.source = getattr(err, "source", "configuration")
+
+            def generate(self, prompt: str) -> str:
+                if isinstance(self._err, LLMServiceError):
+                    raise self._err
+                raise LLMServiceUnavailableError(f"LLM client initialization failed: {self._err}", source="configuration")
+
+        return FailingLLMClient(exc)
 
 
 def get_rate_limiter() -> InMemoryRateLimiter:

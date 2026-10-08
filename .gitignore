@@ -27,3 +27,5 @@ frontend/dist/
 # IDE
 .vscode/
 .idea/
+backend/data/chroma/
+backend/data/ddi.db

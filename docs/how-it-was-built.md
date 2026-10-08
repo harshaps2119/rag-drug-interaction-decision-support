@@ -228,7 +228,7 @@ component responsibilities, and safety-UX reasoning: `docs/frontend.md`.
 4. **What was NOT done, stated plainly**: no real browser was launched.
    Visual rendering, mouse/keyboard interaction against the live app,
    and the two dev servers (`npm run dev` + `uvicorn --reload`) running
-   side-by-side have not been observed by Claude. See the frontend's
+   side-by-side have not been observed by automated testing. See the frontend's
    own `README.md` for the exact commands to verify this yourself.
 
 ## Step 15 — Testing

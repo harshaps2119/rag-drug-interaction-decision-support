@@ -18,7 +18,7 @@ import { getAssessmentInfo } from "../utils/evidence";
  *    tones in utils/evidence.js and the explicit description text.
  * 3. Prose fields (evidence_summary, clinical_effect, mechanism) are
  *    only shown in `mode === "llm_grounded"`. In `mode === "evidence_only"`
- *    (Gemini failed, or its response failed grounding validation), NO
+ *    (the LLM failed, or its response failed grounding validation), NO
  *    generated prose is shown — only the fallback_reason and the raw
  *    retrieved evidence, exactly matching what the backend actually
  *    decided to show, never papering over the gap with placeholder text.
@@ -26,7 +26,11 @@ import { getAssessmentInfo } from "../utils/evidence";
  *    source" when the backend's severity field is null — so the UI
  *    never shows a blank space that looks like missing/broken UI data
  *    (an explicit design requirement).
- * 5. Every evidence item is shown via EvidenceCard, unmodified.
+ * 5. Evidence presentation:
+ *    - Pair-specific evidence is prioritized and presented first.
+ *    - Lower-specificity evidence is grouped under "Additional supporting evidence".
+ *    - Every evidence item visibly exposes its excerpt and FDA metadata without
+ *      requiring user clicks.
  */
 export default function InteractionResult({ result }) {
   if (!result) return null;
@@ -35,8 +39,20 @@ export default function InteractionResult({ result }) {
   const isFallback = result.mode === "evidence_only";
   const isInvalidInput = result.interaction_assessment === "invalid_input";
   const evidenceItems = result.cited_evidence || [];
+
+  const pairEvidence = evidenceItems.filter(
+    (item) => item.classification === "pair_specific_evidence"
+  );
+  const supportingEvidence = evidenceItems.filter(
+    (item) => item.classification !== "pair_specific_evidence"
+  );
+
+  const drugAName = result?.drug_a?.input_name || result?.drug_a?.normalized_name || "First medication";
+  const drugBName = result?.drug_b?.input_name || result?.drug_b?.normalized_name || "second medication";
+  const formattedA = drugAName.charAt(0).toUpperCase() + drugAName.slice(1);
+  const formattedB = drugBName.charAt(0).toUpperCase() + drugBName.slice(1);
   const assessmentDescription = isInvalidInput
-    ? `${result.drug_a.input_name[0].toUpperCase()}${result.drug_a.input_name.slice(1)} and ${result.drug_b.input_name[0].toUpperCase()}${result.drug_b.input_name.slice(1)} resolve to the same medication. ${assessment.description}`
+    ? `${formattedA} and ${formattedB} resolve to the same medication. ${assessment.description}`
     : assessment.description;
 
   return (
@@ -90,15 +106,47 @@ export default function InteractionResult({ result }) {
         </div>
       )}
 
-      <div className="result-section">
+      <div className="result-section evidence-section">
         <h3>Evidence ({evidenceItems.length})</h3>
         {evidenceItems.length === 0 ? (
           <p>No evidence was retrieved for this pair.</p>
         ) : (
-          <div className="evidence-list">
-            {evidenceItems.map((evidence) => (
-              <EvidenceCard key={evidence.evidence_id} evidence={evidence} />
-            ))}
+          <div className="evidence-groups">
+            {pairEvidence.length > 0 && (
+              <div className="evidence-group evidence-group--pair-specific">
+                <div className="evidence-group-header">
+                  <h4 className="evidence-group-title">
+                    Pair-specific evidence ({pairEvidence.length})
+                  </h4>
+                  <p className="evidence-group-subtitle">
+                    Evidence citing both medications together in FDA drug labeling.
+                  </p>
+                </div>
+                <div className="evidence-list">
+                  {pairEvidence.map((evidence) => (
+                    <EvidenceCard key={evidence.evidence_id} evidence={evidence} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {supportingEvidence.length > 0 && (
+              <div className="evidence-group evidence-group--supporting">
+                <div className="evidence-group-header">
+                  <h4 className="evidence-group-title">
+                    Additional supporting evidence ({supportingEvidence.length})
+                  </h4>
+                  <p className="evidence-group-subtitle">
+                    Relevant single-drug, class-level, or general FDA labeling context without direct pair mention.
+                  </p>
+                </div>
+                <div className="evidence-list">
+                  {supportingEvidence.map((evidence) => (
+                    <EvidenceCard key={evidence.evidence_id} evidence={evidence} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -4,14 +4,14 @@
 
 Every fact in this system — which drug, which FDA label, which section,
 which exact text — was already established by Phases 2-6, entirely
-without any LLM involvement. Gemini is added in this phase for exactly
+without any LLM involvement. xAI Grok is the default provider in this phase for exactly
 one job: **turning already-retrieved, already-classified evidence into
 readable prose** — never to decide what counts as evidence, never to
 decide whether an interaction exists, never to add facts the retrieval
 layer didn't already surface.
 
 This is enforced mechanically, not just by asking nicely in the prompt:
-`services/grounding_validator.py` runs after every Gemini call and
+`services/grounding_validator.py` runs after every LLM call and
 independently checks that the model didn't exceed what Phase 6's
 retrieval actually supports (see "Grounding validation" below). If it
 did, the response is discarded — the LLM's opinion of what it found is
@@ -26,7 +26,17 @@ outdated or wrong. RAG (Phases 5-6) means Gemini is only ever asked to
 recall facts from its own training. The prompt says this explicitly and
 repeatedly (see "The prompt" below), and the validator checks it.
 
-## How evidence is passed to Gemini
+## Provider configuration and structured output
+
+`LLM_PROVIDER=xai` selects the default provider, xAI Grok. The xAI client
+uses the official OpenAI-compatible endpoint (`https://api.x.ai/v1`) with
+`XAI_MODEL=grok-4.6` and strict JSON Schema output generated from
+`LLMStructuredOutput`. Gemini remains available for existing deployments
+with `LLM_PROVIDER=gemini`. Both providers feed the same parser and the
+same local grounding validator; no provider is allowed to determine the
+interaction evidence status.
+
+## How evidence is passed to the LLM
 
 `services/explanation_service.build_evidence_id_map()` takes a Phase 6
 `PairRetrievalResult` and assigns each evidence chunk a stable id —
@@ -37,7 +47,7 @@ evidence first, then supporting evidence), capped at
 `services/llm_service.build_prompt()` then writes each evidence item
 into the prompt labeled with its id, its classification (`pair_specific`
 / `class_level` / `drug_specific` / `general_label`), its source drug,
-and its section name — so Gemini has, in plain sight, exactly the
+and its section name — so the LLM has, in plain sight, exactly the
 distinction Phase 6 already made, and is instructed not to blur it.
 
 If Phase 6 found nothing at all, the prompt says so explicitly
@@ -62,7 +72,7 @@ so parsing failures are rare and unambiguous when they happen.
 
 ## Structured output
 
-Gemini's raw text response is parsed into `schemas/llm_output.py`'s
+The provider's raw text response is parsed into `schemas/llm_output.py`'s
 `LLMStructuredOutput` — a narrow schema with exactly the fields the
 prompt asked for: `interaction_assessment`, `evidence_summary`,
 `clinical_effect`, `mechanism`, `severity`, `cited_evidence_ids`,
@@ -126,7 +136,7 @@ system falls back to evidence-only mode (below). There is no partial
 trust: a model willing to hallucinate one citation or upgrade one
 classification cannot be trusted on the surrounding claims either.
 
-## What happens when Gemini fails, in any way
+## What happens when the LLM fails, in any way
 
 Every failure mode below routes to the exact same evidence-only
 fallback — full retrieved evidence, with citations, no generated prose,
@@ -135,10 +145,10 @@ plus an explicit reason:
 | Failure | Exception raised | Where |
 |---|---|---|
 | No API key configured | `LLMAPIKeyMissingError` | Before any network call |
-| API key rejected | `LLMAPIKeyInvalidError` | On the Gemini call |
-| Request times out | `LLMTimeoutError` | On the Gemini call |
-| Rate limit hit | `LLMRateLimitError` | On the Gemini call |
-| Gemini service down (5xx) | `LLMServiceUnavailableError` | On the Gemini call |
+| API key rejected | `LLMAPIKeyInvalidError` | On the provider call |
+| Request times out | `LLMTimeoutError` | On the provider call |
+| Rate limit hit | `LLMRateLimitError` | On the provider call |
+| Provider service down (5xx) | `LLMServiceUnavailableError` | On the provider call |
 | Response isn't valid JSON | `LLMOutputParsingError` | Parsing the response |
 | Response JSON doesn't match schema | `LLMOutputParsingError` | Parsing the response |
 | Response fails grounding validation | *(no exception — `ValidationResult.passed=False`)* | After parsing, before display |
@@ -171,7 +181,7 @@ respects request timeouts properly, which matters for real restricted
 networks too, not just this sandbox.
 
 Because of this, **no actual Gemini API call has been made or verified
-by Claude** during this phase. Every test in
+by automated testing** during this phase. Every test in
 `tests/test_llm_service.py`, `tests/test_grounding_validator.py`,
 `tests/test_explanation_service.py`, and `tests/test_safety_regression.py`
 uses `FakeLLMClient` (`tests/_fake_llm.py`) — a deterministic stand-in

@@ -18,7 +18,7 @@ npm run build
 npm run lint
 ```
 
-No live RxNorm, DailyMed, or Gemini API access is required for either
+No live RxNorm, DailyMed, xAI, or Gemini API access is required for either
 suite — everything is either a pure function test, a real local
 resource (SQLite, ChromaDB) with no network dependency, or a
 mocked/faked external call. The backend has one auto-skipping test for
@@ -50,14 +50,14 @@ warnings and 0 errors.
 | Embeddings (Phase 5) | `DeterministicFakeEmbeddingModel` for plumbing; one auto-skipping real-model test |
 | ChromaDB / RAG ingest (Phase 5) | Real local ChromaDB (tmp_path) + fake embeddings |
 | Pair retrieval (Phase 6) | Real SQLite + real ChromaDB + fake embeddings, controlled fixtures |
-| LLM / grounding validation (Phase 7) | `FakeLLMClient` — no real Gemini call |
+| LLM / grounding validation (Phase 7) | Fake clients, including mocked xAI structured responses — no real provider call |
 | API layer (Phase 8) | Real FastAPI app (`TestClient`) with all dependencies overridden by fakes |
-| Frontend (Phase 9) | React Testing Library with `services/api.js` mocked — no real backend or Gemini needed |
+| Frontend (Phase 9) | React Testing Library with `services/api.js` mocked — no real backend or LLM needed |
 
 The guiding principle throughout: **use the real thing whenever it's
 free and local** (SQLite, ChromaDB, pure functions), and **fake only
 what genuinely requires network access or an API key** (RxNorm,
-DailyMed, the embedding model download, Gemini) — never mock something
+DailyMed, the embedding model download, or an LLM provider) — never mock something
 that doesn't need it, since that would test less than what's actually
 possible to verify.
 

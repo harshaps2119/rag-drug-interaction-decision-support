@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import InteractionResult from "./InteractionResult";
 import {
   pairSpecificResult,
+  pairWithSupportingEvidenceResult,
   insufficientEvidenceResult,
   evidenceOnlyFallbackResult,
   drugNotFoundResult,
@@ -97,5 +98,27 @@ describe("InteractionResult", () => {
     const { container: neutralContainer } = render(<InteractionResult result={insufficientEvidenceResult} />);
     expect(strongContainer.querySelector(".tone-strong")).toBeInTheDocument();
     expect(neutralContainer.querySelector(".tone-neutral")).toBeInTheDocument();
+  });
+
+  it("prioritizes pair-specific evidence first and groups lower-specificity evidence under 'Additional supporting evidence'", () => {
+    const { container } = render(<InteractionResult result={pairWithSupportingEvidenceResult} />);
+    expect(screen.getByText("Evidence (2)")).toBeInTheDocument();
+    expect(screen.getByText("Pair-specific evidence (1)")).toBeInTheDocument();
+    expect(screen.getByText("Additional supporting evidence (1)")).toBeInTheDocument();
+
+    const pairGroup = container.querySelector(".evidence-group--pair-specific");
+    const supportingGroup = container.querySelector(".evidence-group--supporting");
+    expect(pairGroup).toBeInTheDocument();
+    expect(supportingGroup).toBeInTheDocument();
+
+    // Verify ordering: pair-specific comes before supporting in the DOM
+    expect(pairGroup.compareDocumentPosition(supportingGroup)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("visibly shows retrieved excerpt and source metadata directly without requiring click", () => {
+    render(<InteractionResult result={pairSpecificResult} />);
+    expect(screen.getByText(/Concomitant use of warfarin with NSAIDs/)).toBeInTheDocument();
+    expect(screen.getByText("Drug Interactions")).toBeInTheDocument();
+    expect(screen.getByText("Example Pharma Inc.")).toBeInTheDocument();
   });
 });

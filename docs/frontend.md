@@ -137,7 +137,7 @@ Three deliberate choices, matching the backend's own safety rules:
   back to a safe `retrieval_error` response rather than crashing).
 - **No real browser was launched in this sandbox.** Visual rendering,
   actual click-through interaction, and the two dev servers running
-  side-by-side have NOT been observed by Claude — see "Browser/local
+  side-by-side have NOT been observed during automated testing — see "Browser/local
   integration" in `docs/how-it-was-built.md` for the exact instructions
   to verify this yourself.
 

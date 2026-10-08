@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 LLMInteractionAssessment = Literal[
     "pair_specific_evidence_found",
@@ -44,6 +44,11 @@ LLMInteractionAssessment = Literal[
 
 
 class LLMStructuredOutput(BaseModel):
+    # Also produces additionalProperties=false in the JSON Schema supplied to
+    # xAI strict structured outputs, and rejects unexpected model fields when
+    # a provider returns them.
+    model_config = ConfigDict(extra="forbid")
+
     interaction_assessment: LLMInteractionAssessment
 
     evidence_summary: str = Field(

@@ -4,14 +4,17 @@ uvicorn[standard]==0.30.6
 pydantic==2.9.2
 pydantic-settings==2.5.2
 
-# --- HTTP client (for RxNorm / DailyMed / Gemini calls) ---
+# --- HTTP client (for RxNorm / DailyMed calls) ---
 httpx==0.27.2
 
 # --- RAG: embeddings + vector store ---
 chromadb==0.5.5
 sentence-transformers==3.1.1
 
-# --- LLM SDK ---
+# --- LLM SDKs ---
+# xAI exposes its API through the official OpenAI-compatible Python client.
+openai>=1.0.0,<3.0.0
+# Optional provider retained for existing Gemini deployments.
 google-generativeai==0.8.2
 
 # --- Data / DB ---

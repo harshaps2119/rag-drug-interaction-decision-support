@@ -10,6 +10,12 @@ needs settings like API URLs, model names, and file paths. Instead of each
 file reading os.environ directly (which is error-prone and hard to test),
 we define ONE typed settings object here using pydantic-settings.
 
+Supported LLM_PROVIDER values:
+  xai        — xAI Grok via OpenAI-compatible API (default)
+  gemini     — Google Gemini via google-generativeai SDK
+  openrouter — Any OpenRouter-hosted model via OpenAI-compatible API
+  none       — Disable LLM; always use evidence-only mode
+
 pydantic-settings automatically:
   1. Reads variables from the `.env` file at project root.
   2. Validates their types (e.g. BACKEND_PORT must be an int).
@@ -31,13 +37,29 @@ Expected output:
     https://rxnav.nlm.nih.gov/REST
 """
 
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # ---- LLM ----
+    # xAI is the default explanation provider. Gemini and OpenRouter are
+    # optional providers. 'none' disables LLM explanations (evidence-only mode).
+    LLM_PROVIDER: Literal["xai", "gemini", "openrouter", "none"] = "xai"
+    XAI_API_KEY: str = ""
+    XAI_MODEL: str = "grok-4.6"
+    XAI_BASE_URL: str = "https://api.x.ai/v1"
+
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
+
+    # OpenRouter — uses OpenAI-compatible API; supports hundreds of models.
+    # See https://openrouter.ai/models for available model identifiers.
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "meta-llama/llama-3.3-70b-instruct"
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
 
@@ -82,7 +104,7 @@ class Settings(BaseSettings):
 
     # ---- Server ----
     BACKEND_HOST: str = "0.0.0.0"
-    BACKEND_PORT: int = 8000
+    BACKEND_PORT: int = 8001
     FRONTEND_ORIGIN: str = "http://localhost:5173"
 
     # Look for a ".env" file two levels up from this file's typical run

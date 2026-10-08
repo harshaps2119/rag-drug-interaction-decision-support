@@ -28,7 +28,7 @@ retrieval/LLM layers underneath it.
 | 4 | Local knowledge base | ✅ Done |
 | 5 | Embeddings + ChromaDB | ✅ Done |
 | 6 | DDI retrieval & evidence assessment | ✅ Done |
-| 7 | Gemini LLM + grounded explanation + safety validation | ✅ Done |
+| 7 | xAI Grok LLM + grounded explanation + safety validation | ✅ Done |
 | 8 | Backend hardening, rate limiting, audit logging | ✅ Done |
 | 9 | React frontend | ✅ Done |
 | 10 | (merged into Phase 8 — see note below) | — |
@@ -54,7 +54,7 @@ original plan's separate "Phase 8: Safety/validation layer" referred to.
 ```
 User → React Frontend → FastAPI Backend → Drug Name Normalization (RxNorm)
      → RAG Retriever (ChromaDB, evidence from DailyMed labels)
-     → LLM (Gemini) explains ONLY the retrieved evidence
+     → LLM (xAI Grok by default; Gemini optional) explains ONLY the retrieved evidence
      → Safety/Validation Layer → Final Answer + Citations
 ```
 
@@ -80,7 +80,7 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt
-cp ../.env.example ../.env       # then edit .env with your GEMINI_API_KEY
+cp ../.env.example ../.env       # then add XAI_API_KEY (xAI is the default provider)
 
 # Initialize the local knowledge base (pure local SQLite, no network needed)
 python ../scripts/setup_data.py
@@ -90,9 +90,6 @@ python ../scripts/ingest_labels.py --seed
 
 # Build the vector index (real network call to download the embedding model)
 python ../scripts/build_vector_index.py
-
-# Verify the real Gemini API works with your key (optional but recommended)
-python ../scripts/test_gemini_live.py
 
 uvicorn app.main:app --reload --port 8000
 ```
@@ -149,8 +146,9 @@ npm run dev
   interactions, contraindications, warnings, pharmacology.
   https://dailymed.nlm.nih.gov/dailymed/webservices-help/v2/
 
-Neither requires an API key. The **Gemini API key is the only credential
-you need to supply** (free tier available at Google AI Studio).
+Neither requires an API key. The default explanation layer needs an
+**xAI API key** (`XAI_API_KEY`). Gemini is retained as an optional provider
+when `LLM_PROVIDER=gemini` and `GEMINI_API_KEY` are configured.
 
 See `docs/data-sources.md` for full endpoint documentation, LOINC section
 codes used, and known coverage limitations of both sources.

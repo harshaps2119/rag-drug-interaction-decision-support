@@ -31,7 +31,7 @@ services/interaction_service.py
     -> ensure_drug_available()   [Phases 2-4, on demand]
     -> ChromaDB indexing          [Phase 5, on demand]
     -> PairRetrievalEngine         [Phase 6]
-    -> generate_explanation()       [Phase 7: Gemini + grounding validation]
+    -> generate_explanation()       [Phase 7: selected LLM + grounding validation]
     |
     v
 Structured JSON response (ExplanationResponse / MultiDrugCheckResponse)
@@ -46,8 +46,8 @@ in `interaction_service.py` that ties them together for a live request.
 ### `GET /api/health`
 
 Reports whether THIS service's own local dependencies work — SQLite,
-ChromaDB, and whether a Gemini API key is configured. **Never calls
-RxNorm, DailyMed, or Gemini itself** (see `docs/security.md` for why).
+ChromaDB, and whether the selected LLM API key is configured. **Never calls
+RxNorm, DailyMed, or an LLM provider itself** (see `docs/security.md` for why).
 
 ```json
 {
@@ -55,7 +55,7 @@ RxNorm, DailyMed, or Gemini itself** (see `docs/security.md` for why).
   "checks": {
     "sqlite": {"status": "ok", "detail": null},
     "chromadb": {"status": "ok", "detail": null},
-    "gemini_configured": {"status": "ok", "detail": null}
+    "llm_configured": {"status": "ok", "detail": null}
   },
   "request_id": "..."
 }
@@ -76,7 +76,7 @@ The core two-drug endpoint. Rate-limited (see below).
 ```
 
 **Response:** an `ExplanationResponse` (same schema as Phase 7) — either
-`mode: "llm_grounded"` with a Gemini-generated, validated explanation, or
+`mode: "llm_grounded"` with a provider-generated, validated explanation, or
 `mode: "evidence_only"` with the raw retrieved evidence and a
 `fallback_reason`, per every failure mode documented in `docs/safety.md`.
 

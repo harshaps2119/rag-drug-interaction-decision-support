@@ -59,7 +59,15 @@ pipeline — to prove the ORCHESTRATION and FALLBACK logic in isolation.
 
 from __future__ import annotations
 
-from app.exceptions import LLMServiceError
+from app.exceptions import (
+    LLMAPIKeyInvalidError,
+    LLMAPIKeyMissingError,
+    LLMOutputParsingError,
+    LLMRateLimitError,
+    LLMServiceError,
+    LLMServiceUnavailableError,
+    LLMTimeoutError,
+)
 from app.schemas.evidence_assessment import PairEvidenceItem, PairRetrievalResult
 from app.schemas.explanation import EvidenceCitation, ExplanationResponse, ValidationResult
 from app.services.grounding_validator import validate
@@ -73,6 +81,27 @@ _DEFAULT_SAFETY_NOTICE = (
 
 # Statuses that never reach the LLM at all — nothing meaningful to explain.
 _NO_LLM_STATUSES = {"drug_not_found", "invalid_input", "retrieval_error", "insufficient_evidence"}
+
+
+def _safe_llm_failure_reason(error: LLMServiceError) -> str:
+    """Return a useful failure category without exposing provider error text."""
+    if getattr(error, "source", None) == "disabled":
+        return "LLM disabled: running in evidence-only mode."
+    if isinstance(error, LLMAPIKeyMissingError):
+        detail = "provider API key is not configured"
+    elif isinstance(error, LLMAPIKeyInvalidError):
+        detail = "provider rejected the configured API key"
+    elif isinstance(error, LLMTimeoutError):
+        detail = "provider request timed out"
+    elif isinstance(error, LLMRateLimitError):
+        detail = "provider rate limit was reached"
+    elif isinstance(error, LLMOutputParsingError):
+        detail = "provider returned malformed output"
+    elif isinstance(error, LLMServiceUnavailableError):
+        detail = "provider is unavailable"
+    else:
+        detail = "provider request failed"
+    return f"LLM unavailable ({error.source}): {detail}."
 
 
 def build_evidence_id_map(
@@ -160,13 +189,24 @@ def generate_explanation(
         )
 
     evidence_map = build_evidence_id_map(pair_result)
+    if not evidence_map:
+        return build_evidence_only_response(
+            pair_result,
+            reason="Cannot generate an explanation: no retrieved evidence was available.",
+        )
+
     drug_a_name = pair_result.drug_a.normalized_name or pair_result.drug_a.input_name
     drug_b_name = pair_result.drug_b.normalized_name or pair_result.drug_b.input_name
 
     try:
         llm_output = generate_grounded_response(drug_a_name, drug_b_name, evidence_map, client=llm_client)
     except LLMServiceError as exc:
-        return build_evidence_only_response(pair_result, reason=f"LLM unavailable ({exc.source}): {exc}")
+        return build_evidence_only_response(pair_result, reason=_safe_llm_failure_reason(exc))
+    except Exception as exc:
+        import logging
+
+        logging.getLogger("ddi.llm").warning("Unexpected error during LLM generation: %s", exc, exc_info=True)
+        return build_evidence_only_response(pair_result, reason="LLM unavailable: provider request failed.")
 
     validation = validate(llm_output, evidence_map, pair_result.evidence_status)
     if not validation.passed:

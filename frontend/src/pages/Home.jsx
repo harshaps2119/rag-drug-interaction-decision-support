@@ -35,8 +35,7 @@ export default function Home() {
       <header className="page-header">
         <h1>Drug Interaction Decision Support</h1>
         <p className="subtitle">
-          Evidence-backed drug interaction screening with AI-assisted explanation, grounded in
-          FDA drug labeling.
+          Evidence-backed drug interaction screening using FDA drug labeling. AI-assisted explanation is optional when configured.
         </p>
       </header>
 

@@ -18,24 +18,41 @@ def test_health_returns_200(api_client):
 def test_health_reports_ok_checks_when_everything_available(api_client, monkeypatch):
     from app.config import settings
 
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "fake-key-for-test")
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "xai")
+    monkeypatch.setattr(settings, "XAI_API_KEY", "fake-key-for-test")
     r = api_client.get("/api/health")
     body = r.json()
     assert body["checks"]["sqlite"]["status"] == "ok"
     assert body["checks"]["chromadb"]["status"] == "ok"
-    assert body["checks"]["gemini_configured"]["status"] == "ok"
+    assert body["checks"]["llm_configured"]["status"] == "ok"
     assert body["status"] == "ok"
 
 
-def test_health_reports_degraded_when_gemini_key_missing(api_client, monkeypatch):
+def test_health_reports_degraded_when_selected_llm_key_missing(api_client, monkeypatch):
     from app.config import settings
 
-    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "xai")
+    monkeypatch.setattr(settings, "XAI_API_KEY", "")
     r = api_client.get("/api/health")
     body = r.json()
-    assert body["checks"]["gemini_configured"]["status"] == "error"
+    assert body["checks"]["llm_configured"]["status"] == "error"
+    assert "XAI_API_KEY" in body["checks"]["llm_configured"]["detail"]
     assert body["status"] == "degraded"
     # Overall request still succeeds -- a missing LLM key is not a service outage.
+    assert r.status_code == 200
+
+
+def test_health_reports_ok_when_llm_provider_is_none(api_client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "none")
+    r = api_client.get("/api/health")
+    body = r.json()
+    assert body["checks"]["sqlite"]["status"] == "ok"
+    assert body["checks"]["chromadb"]["status"] == "ok"
+    assert body["checks"]["llm_configured"]["status"] == "ok"
+    assert "evidence-only mode" in body["checks"]["llm_configured"]["detail"]
+    assert body["status"] == "ok"
     assert r.status_code == 200
 
 
@@ -45,11 +62,11 @@ def test_health_includes_request_id(api_client):
     assert r.json()["request_id"] == r.headers["X-Request-ID"]
 
 
-def test_health_never_calls_external_medical_apis_or_gemini(api_client, monkeypatch):
+def test_health_never_calls_external_medical_apis_or_llm(api_client, monkeypatch):
     """
     Patches every external-network-capable function this project has to
     raise if called -- proves the health endpoint genuinely never touches
-    RxNorm, DailyMed, or Gemini, rather than just trusting the code
+    RxNorm, DailyMed, or an LLM provider, rather than just trusting the code
     review.
     """
 

@@ -34,6 +34,34 @@ export const pairSpecificResult = {
   validation: { passed: true, fatal_issues: [], corrections: [], corrected_severity: null },
 };
 
+export const pairWithSupportingEvidenceResult = {
+  ...pairSpecificResult,
+  cited_evidence: [
+    {
+      evidence_id: "EVIDENCE-001",
+      text: "Concomitant use of warfarin with NSAIDs such as ibuprofen may increase the risk of bleeding.",
+      drug_name: "warfarin",
+      rxcui: "11289",
+      section_name: "Drug Interactions",
+      section_code: "34073-7",
+      manufacturer: "Example Pharma Inc.",
+      source_url: "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=warfarin-setid",
+      classification: "pair_specific_evidence",
+    },
+    {
+      evidence_id: "EVIDENCE-002",
+      text: "Ibuprofen is a nonsteroidal anti-inflammatory drug that exhibits anti-inflammatory, analgesic, and antipyretic activities.",
+      drug_name: "ibuprofen",
+      rxcui: "5640",
+      section_name: "Clinical Pharmacology",
+      section_code: "34090-1",
+      manufacturer: "Generic Pharma Corp.",
+      source_url: "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=ibuprofen-setid",
+      classification: "drug_specific_evidence",
+    },
+  ],
+};
+
 export const insufficientEvidenceResult = {
   drug_a: { input_name: "warfarin", rxcui: "11289", normalized_name: "warfarin", resolved: true },
   drug_b: { input_name: "metformin", rxcui: "6809", normalized_name: "metformin", resolved: true },

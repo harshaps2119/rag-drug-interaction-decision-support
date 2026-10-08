@@ -5,7 +5,7 @@ and gives prepared answers for viva questions.
 
 ## The one-sentence explanation
 
-> **Gemini explains evidence that retrieval already found and classified.
+> **The configured LLM explains evidence that retrieval already found and classified.
 > It cannot invent evidence, upgrade its strength, or claim an
 > interaction that retrieval didn't establish — and if it tries, its
 > entire response is discarded in favor of showing the evidence itself.**
@@ -26,7 +26,7 @@ enforced twice:
    Phase 6 exactly. There is no code path through which the model can
    set this field to anything resembling "no interaction"; if it tries,
    JSON parsing/schema validation itself rejects the response.
-2. **A phrase-level check on the free text.** Even if Gemini doesn't use
+2. **A phrase-level check on the free text.** Even if the LLM doesn't use
    that field, it might still write "these drugs do not interact" inside
    `evidence_summary` or another prose field. `grounding_validator.py`
    scans for exactly this class of phrase and treats any match as fatal.
@@ -131,7 +131,7 @@ exceed retrieval's own finding, no "no interaction" language, no
 fabricated URLs (fatal, all four), and severity must be verbatim-present
 in cited text (non-fatal, stripped if not).
 
-**"Can Gemini determine drug interaction severity?"** No — and the
+**"Can Grok determine drug interaction severity?"** No — and the
 system is built so it structurally cannot. It may only *report* a
 severity phrase if the retrieved evidence explicitly states one, and
 even then, the validator independently confirms that exact phrase is
@@ -145,7 +145,7 @@ uncertainty; if the model tries to say more than that (e.g. asserts
 safety), the response is discarded and the (empty) evidence-only view is
 shown instead.
 
-**"What happens if Gemini is unavailable?"** The system falls back to
+**"What happens if Grok is unavailable?"** The system falls back to
 showing exactly what Phase 6 retrieved — full evidence, full citations —
 with no generated prose and a clear reason why. The application stays
 fully usable; it just does less.

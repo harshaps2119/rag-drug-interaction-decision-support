@@ -86,7 +86,7 @@ describe("Home page", () => {
     });
   });
 
-  it("displays the evidence-only fallback when Gemini fails, without a blank screen", async () => {
+  it("displays the evidence-only fallback when the LLM fails, without a blank screen", async () => {
     vi.spyOn(api, "checkInteraction").mockResolvedValue(evidenceOnlyFallbackResult);
     const user = userEvent.setup();
     render(<Home />);

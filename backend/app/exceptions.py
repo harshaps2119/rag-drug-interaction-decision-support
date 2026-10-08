@@ -41,33 +41,33 @@ class ExternalAPIBadResponseError(ExternalAPIError):
 class LLMServiceError(Exception):
     """Base class for all errors from the LLM layer (Phase 7)."""
 
-    def __init__(self, message: str, *, source: str = "Gemini"):
+    def __init__(self, message: str, *, source: str = "LLM"):
         self.source = source
         super().__init__(message)
 
 
 class LLMAPIKeyMissingError(LLMServiceError):
-    """Raised when no Gemini API key is configured at all."""
+    """Raised when the selected LLM provider has no configured API key."""
 
 
 class LLMAPIKeyInvalidError(LLMServiceError):
-    """Raised when the Gemini API rejects the configured key."""
+    """Raised when the selected LLM provider rejects the configured key."""
 
 
 class LLMTimeoutError(LLMServiceError):
-    """Raised when a Gemini request times out."""
+    """Raised when an LLM request times out."""
 
 
 class LLMRateLimitError(LLMServiceError):
-    """Raised when Gemini's rate limit is hit."""
+    """Raised when an LLM provider rate limit is hit."""
 
 
 class LLMServiceUnavailableError(LLMServiceError):
-    """Raised when Gemini is unreachable or returns a server-side error."""
+    """Raised when an LLM provider is unreachable or returns a server-side error."""
 
 
 class LLMOutputParsingError(LLMServiceError):
-    """Raised when Gemini's response isn't valid JSON, or doesn't match the expected schema."""
+    """Raised when an LLM response isn't valid JSON or doesn't match the expected schema."""
 
 
 class DrugNotFoundError(Exception):

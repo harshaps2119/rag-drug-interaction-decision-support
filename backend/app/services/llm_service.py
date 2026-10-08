@@ -1,20 +1,34 @@
 """
 services/llm_service.py
 ==========================
-Talks to Gemini (or, via the LLMClient protocol, any swapped-in
-provider) to generate a STRUCTURED, evidence-grounded explanation of a
-drug pair's retrieved evidence — never to determine whether an
-interaction exists. See the module docstring in
-services/explanation_service.py for how this fits into the full
-pipeline, and docs/llm.md for the full safety reasoning.
+Talks to xAI Grok (via the OpenAI-compatible API), OpenRouter-hosted models
+(also OpenAI-compatible), or Google Gemini to generate a STRUCTURED,
+evidence-grounded explanation of a drug pair's retrieved evidence — never to
+determine whether an interaction exists. See the module docstring in
+services/explanation_service.py for how this fits into the full pipeline,
+and docs/llm.md for the full safety reasoning.
+
+SUPPORTED PROVIDERS
+--------------------
+  xai        — xAI Grok via XAILLMClient (OpenAI-compatible, strict JSON schema)
+  openrouter — Any OpenRouter model via OpenRouterLLMClient (OpenAI-compatible)
+  gemini     — Google Gemini via GeminiLLMClient (google-generativeai SDK)
+  none       — DisabledLLMClient (always raises, triggers evidence-only fallback)
 
 WHY THE PROVIDER IS SWAPPABLE (LLMClient protocol)
 --------------------------------------------------------
 `generate_grounded_response()` accepts any object with a `.generate(prompt) -> str`
-method — it doesn't import or know about Gemini specifically. GeminiLLMClient
-is the only implementation right now, but swapping in OpenAI or Claude
-later means writing one new small class, not touching this file's logic,
-the prompt, the schema, or the validator at all.
+method — it doesn't import or know about a provider specifically.
+XAILLMClient and GeminiLLMClient are small provider implementations;
+adding another provider does not change the prompt, schema, retrieval,
+or grounding validator.
+
+WHY xAI USES THE OPENAI-COMPATIBLE SDK
+--------------------------------------
+xAI documents an OpenAI-compatible endpoint at https://api.x.ai/v1. The
+xAI client uses strict JSON Schema output generated from
+LLMStructuredOutput. This improves response format reliability but does
+not replace the application's independent parsing or grounding controls.
 
 WHY REST TRANSPORT, NOT THE SDK'S DEFAULT (gRPC)
 ------------------------------------------------------
@@ -30,9 +44,9 @@ not just this sandbox.
 
 HOW THE API KEY IS HANDLED
 -------------------------------
-Read from `settings.GEMINI_API_KEY` (from `.env` via app/config.py) —
-NEVER hard-coded, and never logged. If it's empty, LLMAPIKeyMissingError
-is raised before any network call is attempted, so the caller
+Read from the selected provider's settings (from `.env` via app/config.py)
+— NEVER hard-coded, and never logged. If its key is empty,
+LLMAPIKeyMissingError is raised before any network call is attempted, so the caller
 (explanation_service) can fall back to evidence-only mode immediately
 rather than waiting on a network call doomed to fail.
 
@@ -59,6 +73,7 @@ from app.exceptions import (
     LLMAPIKeyMissingError,
     LLMOutputParsingError,
     LLMRateLimitError,
+    LLMServiceError,
     LLMServiceUnavailableError,
     LLMTimeoutError,
 )
@@ -72,8 +87,84 @@ class LLMClient(Protocol):
     def generate(self, prompt: str) -> str: ...
 
 
+class XAILLMClient:
+    """xAI Grok implementation using xAI's OpenAI-compatible API."""
+
+    source = "xAI"
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model_name: str | None = None,
+        base_url: str | None = None,
+        timeout_seconds: float | None = None,
+        sdk_client=None,
+    ):
+        self.api_key = api_key if api_key is not None else settings.XAI_API_KEY
+        self.model_name = model_name or settings.XAI_MODEL
+        self.base_url = base_url or settings.XAI_BASE_URL
+        self.timeout_seconds = timeout_seconds or settings.LLM_TIMEOUT_SECONDS
+        # Dependency injection keeps provider tests offline and avoids
+        # importing the SDK until a real xAI request is needed.
+        self._client = sdk_client
+
+    def _load(self):
+        if not self.api_key:
+            raise LLMAPIKeyMissingError(
+                "XAI_API_KEY is not set. Add it to your .env file — see .env.example.", source="xAI"
+            )
+        if self._client is None:
+            try:
+                from openai import OpenAI
+            except ImportError as exc:
+                raise LLMServiceUnavailableError(
+                    "The xAI client dependency is not installed. Install backend/requirements.txt.",
+                    source="xAI",
+                ) from exc
+
+            self._client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                timeout=self.timeout_seconds,
+                # Let the existing evidence-only fallback handle a failed
+                # explanation promptly rather than making hidden retries.
+                max_retries=0,
+            )
+        return self._client
+
+    def generate(self, prompt: str) -> str:
+        client = self._load()
+        try:
+            response = client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "ddi_grounded_explanation",
+                        "strict": True,
+                        "schema": LLMStructuredOutput.model_json_schema(),
+                    },
+                },
+            )
+        except Exception as exc:
+            raise _translate_xai_exception(exc) from exc
+
+        try:
+            content = response.choices[0].message.content
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise LLMOutputParsingError("xAI returned a response without a message body.", source="xAI") from exc
+
+        if not isinstance(content, str) or not content.strip():
+            raise LLMOutputParsingError("xAI returned an empty response.", source="xAI")
+        return content
+
+
 class GeminiLLMClient:
     """The real Gemini-backed implementation of LLMClient."""
+
+    source = "Gemini"
 
     def __init__(
         self,
@@ -89,7 +180,7 @@ class GeminiLLMClient:
     def _load(self):
         if not self.api_key:
             raise LLMAPIKeyMissingError(
-                "GEMINI_API_KEY is not set. Add it to your .env file — see .env.example."
+                "GEMINI_API_KEY is not set. Add it to your .env file — see .env.example.", source="Gemini"
             )
         if self._model is None:
             import google.generativeai as genai
@@ -112,7 +203,7 @@ class GeminiLLMClient:
 
         text = getattr(response, "text", None)
         if not text:
-            raise LLMOutputParsingError("Gemini returned an empty response.")
+            raise LLMOutputParsingError("Gemini returned an empty response.", source="Gemini")
         return text
 
 
@@ -131,14 +222,196 @@ def _translate_gemini_exception(exc: Exception) -> Exception:
     haystack = f"{name} {message}".lower()
 
     if any(k in haystack for k in ("unauthenticated", "permissiondenied", "api_key_invalid", "invalid api key")):
-        return LLMAPIKeyInvalidError(f"Gemini rejected the API key: {message}")
+        return LLMAPIKeyInvalidError(f"Gemini rejected the API key: {message}", source="Gemini")
     if any(k in haystack for k in ("deadlineexceeded", "timeout", "timed out")):
-        return LLMTimeoutError(f"Gemini request timed out: {message}")
+        return LLMTimeoutError(f"Gemini request timed out: {message}", source="Gemini")
     if any(k in haystack for k in ("resourceexhausted", "rate limit", "429", "quota")):
-        return LLMRateLimitError(f"Gemini rate limit hit: {message}")
+        return LLMRateLimitError(f"Gemini rate limit hit: {message}", source="Gemini")
     if any(k in haystack for k in ("serviceunavailable", "internalservererror", "503", "500")):
-        return LLMServiceUnavailableError(f"Gemini service unavailable: {message}")
-    return LLMServiceUnavailableError(f"Gemini call failed: {message}")
+        return LLMServiceUnavailableError(f"Gemini service unavailable: {message}", source="Gemini")
+    return LLMServiceUnavailableError(f"Gemini call failed: {message}", source="Gemini")
+
+
+def _translate_xai_exception(exc: Exception) -> LLMServiceError:
+    """Translate OpenAI-compatible xAI client failures into safe domain errors."""
+    name = type(exc).__name__
+    message = str(exc)
+    haystack = f"{name} {message}".lower()
+    status_code = getattr(exc, "status_code", None)
+
+    if status_code in (401, 403) or any(
+        marker in haystack
+        for marker in (
+            "authentication",
+            "unauthorized",
+            "invalid api key",
+            "invalid_api_key",
+            "incorrect api key",
+        )
+    ):
+        return LLMAPIKeyInvalidError(f"xAI rejected the API key: {message}", source="xAI")
+    if status_code in (408, 504) or any(marker in haystack for marker in ("timeout", "timed out", "apitimeouterror")):
+        return LLMTimeoutError(f"xAI request timed out: {message}", source="xAI")
+    if status_code == 429 or any(marker in haystack for marker in ("rate limit", "ratelimit", "429", "quota")):
+        return LLMRateLimitError(f"xAI rate limit hit: {message}", source="xAI")
+    if (isinstance(status_code, int) and status_code >= 500) or any(
+        marker in haystack for marker in ("connection", "api connection", "service unavailable", "503", "500")
+    ):
+        return LLMServiceUnavailableError(f"xAI service unavailable: {message}", source="xAI")
+    return LLMServiceUnavailableError(f"xAI call failed: {message}", source="xAI")
+
+
+def _translate_openrouter_exception(exc: Exception) -> LLMServiceError:
+    """Translate OpenAI-compatible OpenRouter client failures into safe domain errors."""
+    name = type(exc).__name__
+    message = str(exc)
+    haystack = f"{name} {message}".lower()
+    status_code = getattr(exc, "status_code", None)
+
+    if status_code in (401, 403) or any(
+        marker in haystack
+        for marker in (
+            "authentication",
+            "unauthorized",
+            "invalid api key",
+            "invalid_api_key",
+            "no auth",
+        )
+    ):
+        return LLMAPIKeyInvalidError(f"OpenRouter rejected the API key: {message}", source="OpenRouter")
+    if status_code in (408, 504) or any(marker in haystack for marker in ("timeout", "timed out", "apitimeouterror")):
+        return LLMTimeoutError(f"OpenRouter request timed out: {message}", source="OpenRouter")
+    if status_code == 429 or any(marker in haystack for marker in ("rate limit", "ratelimit", "429", "quota")):
+        return LLMRateLimitError(f"OpenRouter rate limit hit: {message}", source="OpenRouter")
+    if (isinstance(status_code, int) and status_code >= 500) or any(
+        marker in haystack for marker in ("connection", "api connection", "service unavailable", "503", "500")
+    ):
+        return LLMServiceUnavailableError(f"OpenRouter service unavailable: {message}", source="OpenRouter")
+    return LLMServiceUnavailableError(f"OpenRouter call failed: {message}", source="OpenRouter")
+
+
+class DisabledLLMClient:
+    """A client used when LLM explanations are disabled in configuration."""
+
+    source = "disabled"
+
+    def generate(self, prompt: str) -> str:
+        raise LLMAPIKeyMissingError("LLM provider is disabled.", source="disabled")
+
+
+class OpenRouterLLMClient:
+    """
+    OpenRouter implementation using their OpenAI-compatible REST API.
+
+    OpenRouter proxies many hosted models (Llama, Mistral, Claude, GPT-4, etc.)
+    through a single endpoint with a standard OpenAI-SDK interface. We reuse
+    the same transport pattern as XAILLMClient, adding the two headers
+    required by OpenRouter's routing layer.
+
+    WHY NO STRICT JSON_SCHEMA MODE
+    --------------------------------
+    OpenRouter passes requests through to the upstream model provider, and
+    many upstream providers do not support the ``response_format={"type":
+    "json_schema", ...}`` parameter. We therefore request
+    ``{"type": "json_object"}`` (supported broadly) and rely on the prompt's
+    explicit JSON-only instruction plus the existing ``_strip_code_fences``
+    / ``generate_grounded_response`` parsing/validation layer, which was
+    already hardened for models that wrap JSON in markdown fences.
+
+    HOW THE API KEY IS HANDLED
+    ---------------------------
+    Read from settings.OPENROUTER_API_KEY (from .env via config.py) — never
+    hard-coded, never logged. If the key is empty, LLMAPIKeyMissingError is
+    raised before any network call so explanation_service falls back to
+    evidence-only mode immediately.
+    """
+
+    source = "OpenRouter"
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model_name: str | None = None,
+        base_url: str | None = None,
+        timeout_seconds: float | None = None,
+        sdk_client=None,
+    ):
+        self.api_key = api_key if api_key is not None else settings.OPENROUTER_API_KEY
+        self.model_name = model_name or settings.OPENROUTER_MODEL
+        self.base_url = base_url or settings.OPENROUTER_BASE_URL
+        self.timeout_seconds = timeout_seconds or settings.LLM_TIMEOUT_SECONDS
+        self._client = sdk_client
+
+    def _load(self):
+        if not self.api_key:
+            raise LLMAPIKeyMissingError(
+                "OPENROUTER_API_KEY is not set. Add it to your .env file — see .env.example.",
+                source="OpenRouter",
+            )
+        if self._client is None:
+            try:
+                from openai import OpenAI
+            except ImportError as exc:
+                raise LLMServiceUnavailableError(
+                    "The openai package is not installed. Install backend/requirements.txt.",
+                    source="OpenRouter",
+                ) from exc
+
+            self._client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                timeout=self.timeout_seconds,
+                max_retries=0,
+                # OpenRouter routing layer requires these two headers.
+                default_headers={
+                    "HTTP-Referer": "https://github.com/your-org/rag-ddi",
+                    "X-Title": "RAG DDI Decision Support",
+                },
+            )
+        return self._client
+
+    def generate(self, prompt: str) -> str:
+        client = self._load()
+        try:
+            response = client.chat.completions.create(
+                model=self.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                # Use json_object mode (broadly supported by OpenRouter models)
+                # rather than strict json_schema (not universally supported).
+                response_format={"type": "json_object"},
+            )
+        except Exception as exc:
+            raise _translate_openrouter_exception(exc) from exc
+
+        try:
+            content = response.choices[0].message.content
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise LLMOutputParsingError(
+                "OpenRouter returned a response without a message body.", source="OpenRouter"
+            ) from exc
+
+        if not isinstance(content, str) or not content.strip():
+            raise LLMOutputParsingError("OpenRouter returned an empty response.", source="OpenRouter")
+        return content
+
+
+def get_configured_llm_client(provider: str | None = None) -> LLMClient:
+    """Return the selected explanation client; retrieval and validation stay provider-independent."""
+    selected_provider = (provider or settings.LLM_PROVIDER).strip().lower()
+    if selected_provider == "xai":
+        return XAILLMClient()
+    if selected_provider == "gemini":
+        return GeminiLLMClient()
+    if selected_provider == "openrouter":
+        return OpenRouterLLMClient()
+    if selected_provider in ("none", "disabled", "off"):
+        return DisabledLLMClient()
+    # Settings validates deployed values, but keep direct calls and monkeypatches safe.
+    raise LLMServiceUnavailableError(
+        f"Unsupported LLM_PROVIDER '{selected_provider}'. Use 'xai', 'gemini', 'openrouter', or 'none'.",
+        source="configuration",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +489,8 @@ def generate_grounded_response(
     these and fall back to evidence-only mode. Never returns a partially
     -trusted result; parsing/schema failure is always all-or-nothing.
     """
-    client = client or GeminiLLMClient()
+    client = client or get_configured_llm_client()
+    source = getattr(client, "source", "LLM")
     prompt = build_prompt(drug_a_name, drug_b_name, evidence_map)
 
     raw_text = client.generate(prompt)
@@ -225,12 +499,12 @@ def generate_grounded_response(
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        raise LLMOutputParsingError(f"Model did not return valid JSON: {exc}") from exc
+        raise LLMOutputParsingError(f"Model did not return valid JSON: {exc}", source=source) from exc
 
     try:
         return LLMStructuredOutput(**data)
     except Exception as exc:  # pydantic.ValidationError, or a non-dict payload
-        raise LLMOutputParsingError(f"Model's JSON did not match the expected schema: {exc}") from exc
+        raise LLMOutputParsingError(f"Model's JSON did not match the expected schema: {exc}", source=source) from exc
 
 
 def _strip_code_fences(text: str) -> str:
