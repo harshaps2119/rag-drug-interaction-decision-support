@@ -46,6 +46,21 @@ API_DESCRIPTION = (
 )
 
 
+def parse_allowed_origins(origin_setting: str) -> list[str]:
+    """
+    Parses configured frontend origins from a single URL or comma-separated list,
+    normalizing whitespace and removing trailing slashes. Preserves local dev origins.
+    """
+    origins: list[str] = []
+    if origin_setting:
+        for item in origin_setting.split(","):
+            cleaned = item.strip().rstrip("/")
+            if cleaned:
+                origins.append(cleaned)
+    origins.extend(["http://localhost:5173", "http://127.0.0.1:5173"])
+    return list(dict.fromkeys(origins))
+
+
 def create_app() -> FastAPI:
     configure_audit_logging()
 
@@ -61,11 +76,7 @@ def create_app() -> FastAPI:
     app.add_middleware(AuditMiddleware)
     app.add_middleware(RequestIDMiddleware)
 
-    allowed_origins = list(dict.fromkeys([
-        settings.FRONTEND_ORIGIN,
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]))
+    allowed_origins = parse_allowed_origins(settings.FRONTEND_ORIGIN)
 
     app.add_middleware(
         CORSMiddleware,

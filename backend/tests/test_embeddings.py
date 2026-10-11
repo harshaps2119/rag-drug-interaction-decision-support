@@ -29,7 +29,11 @@ HOW TO RUN
 
 import pytest
 
-from app.rag.embeddings import DeterministicFakeEmbeddingModel, SentenceTransformerEmbeddingModel
+from app.rag.embeddings import (
+    DeterministicFakeEmbeddingModel,
+    SentenceTransformerEmbeddingModel,
+    _is_model_cached,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -101,3 +105,27 @@ def test_real_model_loads_and_embeds_if_available():
     # Real embeddings are normalized (normalize_embeddings=True) -> unit length.
     magnitude = sum(x * x for x in vectors[0]) ** 0.5
     assert abs(magnitude - 1.0) < 1e-3
+
+
+def test_is_model_cached_utility(tmp_path):
+    # Nonexistent model should return False
+    assert not _is_model_cached("nonexistent-org/nonexistent-model-xyz-12345")
+
+    # Existing directory should return True
+    d = tmp_path / "dummy_model"
+    d.mkdir()
+    assert _is_model_cached(str(d))
+
+
+def test_real_model_limits_torch_threads():
+    import torch
+
+    model = SentenceTransformerEmbeddingModel()
+    try:
+        _ = model.dimension
+    except Exception as exc:
+        pytest.skip(f"Real embedding model unavailable in this environment: {exc}")
+        return
+
+    # Must be set to 1 for Render's 0.1 CPU allocation
+    assert torch.get_num_threads() <= 1

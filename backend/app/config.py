@@ -105,7 +105,7 @@ class Settings(BaseSettings):
     # ---- Server ----
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8001
-    FRONTEND_ORIGIN: str = "http://localhost:5173"
+    FRONTEND_ORIGIN: str = "https://rag-drug-interaction-decision-suppo.vercel.app"
 
     # Look for a ".env" file two levels up from this file's typical run
     # location (i.e. project root), but also fall back to a local .env

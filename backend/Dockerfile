@@ -28,13 +28,19 @@ RUN mkdir -p /app/backend/data
 
 # Pre-download embedding model during build
 # This avoids downloading ~90MB on the first public request or failing due to egress limits.
-RUN python -c "import sys; sys.path.insert(0, '/app/backend'); from app.rag.embeddings import SentenceTransformerEmbeddingModel; SentenceTransformerEmbeddingModel()"
+RUN python -c "import sys; sys.path.insert(0, '/app/backend'); from app.rag.embeddings import SentenceTransformerEmbeddingModel; m = SentenceTransformerEmbeddingModel(); m.dimension"
 
 # Initialize SQLite database and ChromaDB index with seed data
 # This creates a baseline database baked into the image.
 RUN python /app/scripts/setup_data.py && \
     python /app/scripts/ingest_labels.py --seed && \
     python /app/scripts/build_vector_index.py
+
+# Set offline mode and CPU thread limits for runtime execution on Render
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1
 
 # Switch work directory for uvicorn
 WORKDIR /app/backend

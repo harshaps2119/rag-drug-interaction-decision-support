@@ -80,6 +80,24 @@ class EmbeddingModel(Protocol):
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
+def _is_model_cached(model_name: str) -> bool:
+    """
+    Checks whether the model files exist locally in the filesystem
+    or in the Hugging Face cache.
+    """
+    import os
+
+    if os.path.exists(model_name):
+        return True
+    try:
+        from huggingface_hub import try_to_load_from_cache
+
+        res = try_to_load_from_cache(model_name, "config.json")
+        return isinstance(res, str)
+    except Exception:
+        return False
+
+
 class SentenceTransformerEmbeddingModel:
     """
     The real embedding model, backed by the `sentence-transformers`
@@ -92,9 +110,25 @@ class SentenceTransformerEmbeddingModel:
 
     def _load(self):
         if self._model is None:
+            import torch
             from sentence_transformers import SentenceTransformer
 
-            self._model = SentenceTransformer(self.model_name)
+            # Limit PyTorch CPU threads for Render's 0.1 CPU allocation
+            # to avoid thread contention, CPU throttling, and excessive memory overhead.
+            if torch.get_num_threads() > 1:
+                torch.set_num_threads(1)
+
+            # Check if model is cached locally; if so, load with local_files_only=True
+            # to avoid network calls and timeout issues at request time.
+            is_cached = _is_model_cached(self.model_name)
+            if is_cached:
+                try:
+                    self._model = SentenceTransformer(self.model_name, local_files_only=True)
+                except Exception:
+                    self._model = SentenceTransformer(self.model_name)
+            else:
+                self._model = SentenceTransformer(self.model_name)
+
         return self._model
 
     @property
@@ -104,10 +138,13 @@ class SentenceTransformerEmbeddingModel:
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
+        import torch
+
         model = self._load()
-        # normalize_embeddings=True -> unit-length vectors, so ChromaDB's
-        # default L2 distance behaves consistently with cosine similarity.
-        vectors = model.encode(list(texts), normalize_embeddings=True, show_progress_bar=False)
+        with torch.inference_mode():
+            # normalize_embeddings=True -> unit-length vectors, so ChromaDB's
+            # default L2 distance behaves consistently with cosine similarity.
+            vectors = model.encode(list(texts), normalize_embeddings=True, show_progress_bar=False)
         return vectors.tolist()
 
 
