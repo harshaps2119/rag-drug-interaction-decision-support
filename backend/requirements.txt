@@ -9,7 +9,9 @@ httpx==0.27.2
 
 # --- RAG: embeddings + vector store ---
 chromadb==0.5.5
-sentence-transformers==3.1.1
+onnxruntime==1.30.0
+tokenizers==0.22.2
+huggingface-hub==0.36.2
 
 # --- LLM SDKs ---
 # xAI exposes its API through the official OpenAI-compatible Python client.

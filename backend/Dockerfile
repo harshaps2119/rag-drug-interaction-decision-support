@@ -26,9 +26,10 @@ COPY scripts/ /app/scripts/
 # Ensure data directory exists
 RUN mkdir -p /app/backend/data
 
-# Pre-download embedding model during build
+# Pre-download and verify pinned ONNX embedding model during build
 # This avoids downloading ~90MB on the first public request or failing due to egress limits.
-RUN python -c "import sys; sys.path.insert(0, '/app/backend'); from app.rag.embeddings import SentenceTransformerEmbeddingModel; m = SentenceTransformerEmbeddingModel(); m.dimension"
+RUN python /app/scripts/download_onnx_model.py && \
+    python -c "import sys; sys.path.insert(0, '/app/backend'); from app.rag.embeddings import OnnxEmbeddingModel; m = OnnxEmbeddingModel(); m.dimension"
 
 # Initialize SQLite database and ChromaDB index with seed data
 # This creates a baseline database baked into the image.

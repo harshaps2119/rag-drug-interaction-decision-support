@@ -11,12 +11,14 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# Local databases / vector stores
+# Local databases / vector stores / models
 *.db
 *.sqlite
 *.sqlite3
 backend/data/chroma_store/
 backend/data/*.db
+backend/models/
+models/
 
 # Node
 frontend/node_modules/

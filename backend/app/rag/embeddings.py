@@ -67,6 +67,7 @@ yourself with real network access to actually verify the real model.
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 from typing import Protocol
 
 from app.config import settings
@@ -80,104 +81,277 @@ class EmbeddingModel(Protocol):
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
-def _is_model_cached(model_name: str) -> bool:
+PINNED_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
+PINNED_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+MODEL_ONNX_FILENAME = "onnx/model.onnx"
+TOKENIZER_FILENAME = "tokenizer.json"
+
+MODEL_ONNX_SHA256 = "6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452"
+TOKENIZER_SHA256 = "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037"
+
+
+def _resolve_onnx_model_files(model_name: str | None = None) -> tuple[Path, Path]:
+    """
+    Resolves the paths to the pinned ONNX model file and tokenizer.json file.
+    Searches:
+      1. Direct local path if model_name is a directory or .onnx file
+      2. Environment-configured ONNX_MODEL_DIR
+      3. Project-local backend/models/ directory
+      4. Hugging Face hub cache directory (pinned revision)
+    """
+    import os
+    from pathlib import Path
+
+    target_name = model_name or settings.EMBEDDING_MODEL_NAME
+
+    # 1. Direct path check on local filesystem
+    p = Path(target_name)
+    if p.is_dir():
+        m_candidates = [p / "model.onnx", p / "onnx" / "model.onnx"]
+        t_candidates = [p / "tokenizer.json"]
+        m_found = next((c for c in m_candidates if c.is_file()), None)
+        t_found = next((c for c in t_candidates if c.is_file()), None)
+        if m_found and t_found:
+            return m_found, t_found
+    elif p.is_file() and p.suffix == ".onnx":
+        t_cand = p.parent / "tokenizer.json"
+        if not t_cand.exists():
+            t_cand = p.parent.parent / "tokenizer.json"
+        if t_cand.is_file():
+            return p, t_cand
+
+    is_pinned_model = target_name in {
+        "all-MiniLM-L6-v2",
+        "sentence-transformers/all-MiniLM-L6-v2",
+        PINNED_REPO_ID,
+    }
+
+    if not is_pinned_model:
+        # Check custom non-pinned HF repo
+        try:
+            from huggingface_hub import try_to_load_from_cache
+
+            m_c = try_to_load_from_cache(target_name, MODEL_ONNX_FILENAME)
+            t_c = try_to_load_from_cache(target_name, TOKENIZER_FILENAME)
+            if isinstance(m_c, str) and isinstance(t_c, str):
+                return Path(m_c), Path(t_c)
+        except Exception:
+            pass
+        raise FileNotFoundError(f"Model files for '{target_name}' not found.")
+
+    # 2. Project-local models directory for pinned model
+    backend_root = Path(__file__).resolve().parent.parent.parent
+    local_dirs = [
+        backend_root / "models" / "all-MiniLM-L6-v2",
+        backend_root / "data" / "models" / "all-MiniLM-L6-v2",
+    ]
+    for ld in local_dirs:
+        m = ld / "model.onnx"
+        t = ld / "tokenizer.json"
+        if m.is_file() and t.is_file():
+            return m, t
+
+    # 3. Hugging Face hub cache resolution for pinned model
+    hf_cache_dirs = []
+    hf_home = os.environ.get("HF_HOME")
+    if hf_home:
+        hf_cache_dirs.append(Path(hf_home) / "hub")
+    hf_cache_dirs.append(Path.home() / ".cache" / "huggingface" / "hub")
+
+    for hf_dir in hf_cache_dirs:
+        repo_dir = hf_dir / "models--sentence-transformers--all-MiniLM-L6-v2"
+        snap_dir = repo_dir / "snapshots" / PINNED_REVISION
+        if snap_dir.is_dir():
+            m = snap_dir / "onnx" / "model.onnx"
+            t = snap_dir / "tokenizer.json"
+            if m.is_file() and t.is_file():
+                return m, t
+
+    # Try huggingface_hub cache lookup utility
+    try:
+        from huggingface_hub import try_to_load_from_cache
+
+        m_cached = try_to_load_from_cache(
+            PINNED_REPO_ID,
+            MODEL_ONNX_FILENAME,
+            revision=PINNED_REVISION,
+        )
+        t_cached = try_to_load_from_cache(
+            PINNED_REPO_ID,
+            TOKENIZER_FILENAME,
+            revision=PINNED_REVISION,
+        )
+        if isinstance(m_cached, str) and isinstance(t_cached, str):
+            return Path(m_cached), Path(t_cached)
+    except Exception:
+        pass
+
+    # If offline mode is NOT active, attempt to download pinned artifacts
+    is_offline = os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
+    if not is_offline:
+        try:
+            from huggingface_hub import hf_hub_download
+
+            m_down = hf_hub_download(PINNED_REPO_ID, MODEL_ONNX_FILENAME, revision=PINNED_REVISION)
+            t_down = hf_hub_download(PINNED_REPO_ID, TOKENIZER_FILENAME, revision=PINNED_REVISION)
+            return Path(m_down), Path(t_down)
+        except Exception:
+            pass
+
+    raise FileNotFoundError(
+        f"Pinned ONNX embedding model or tokenizer not found offline ({target_name}). "
+        f"Run 'python scripts/download_onnx_model.py' to download and verify the pinned artifacts."
+    )
+
+
+def _is_model_cached(model_name: str | None = None) -> bool:
     """
     Checks whether the model files exist locally in the filesystem
     or in the Hugging Face cache.
     """
-    import os
+    from pathlib import Path
 
-    if os.path.exists(model_name):
-        return True
-    try:
-        from huggingface_hub import try_to_load_from_cache
-
-        res = try_to_load_from_cache(model_name, "config.json")
-        if isinstance(res, str):
+    if model_name:
+        p = Path(model_name)
+        if p.is_dir() or (p.is_file() and p.suffix == ".onnx"):
             return True
-        if not model_name.startswith("sentence-transformers/"):
-            res = try_to_load_from_cache(f"sentence-transformers/{model_name}", "config.json")
-            if isinstance(res, str):
-                return True
-        return False
+
+    try:
+        m, t = _resolve_onnx_model_files(model_name)
+        return m.is_file() and t.is_file()
     except Exception:
         return False
 
 
-class SentenceTransformerEmbeddingModel:
+class OnnxEmbeddingModel:
     """
-    The real embedding model, backed by the `sentence-transformers`
-    library. Lazily loads the underlying model on first use.
+    The real embedding model, backed by ONNX Runtime CPUExecutionProvider
+    and Hugging Face Tokenizers. Lazily loads the underlying session on first use.
+    Uses the official pinned unquantized all-MiniLM-L6-v2 ONNX artifact (384 dimensions).
     """
 
-    def __init__(self, model_name: str | None = None):
+    def __init__(
+        self,
+        model_name: str | None = None,
+        model_path: str | Path | None = None,
+        tokenizer_path: str | Path | None = None,
+        intra_op_num_threads: int = 1,
+        inter_op_num_threads: int = 1,
+        batch_size: int = 4,
+    ):
         import threading
 
         self.model_name = model_name or settings.EMBEDDING_MODEL_NAME
-        self._model = None
+        self._model_path = Path(model_path) if model_path else None
+        self._tokenizer_path = Path(tokenizer_path) if tokenizer_path else None
+        self._intra_op_num_threads = intra_op_num_threads
+        self._inter_op_num_threads = inter_op_num_threads
+        self._batch_size = batch_size
+
+        self._session = None
+        self._tokenizer = None
         self._lock = threading.Lock()
 
     def _load(self):
-        if self._model is None:
+        if self._session is None or self._tokenizer is None:
             with self._lock:
-                if self._model is None:
-                    import torch
-
-                    # Limit PyTorch CPU threads for Render's 0.1 CPU allocation
-                    # to avoid thread contention, CPU throttling, and excessive memory overhead.
-                    if torch.get_num_threads() > 1:
-                        torch.set_num_threads(1)
-
-                    from sentence_transformers import SentenceTransformer
-
-                    # Check if model is cached locally; if so, load with local_files_only=True
-                    # to avoid network calls and timeout issues at request time.
-                    is_cached = _is_model_cached(self.model_name)
-                    if is_cached:
-                        try:
-                            self._model = SentenceTransformer(
-                                self.model_name,
-                                device="cpu",
-                                local_files_only=True,
-                            )
-                        except Exception:
-                            self._model = SentenceTransformer(
-                                self.model_name,
-                                device="cpu",
-                            )
+                if self._session is None or self._tokenizer is None:
+                    if self._model_path and self._tokenizer_path:
+                        m_path = self._model_path
+                        t_path = self._tokenizer_path
                     else:
-                        self._model = SentenceTransformer(
-                            self.model_name,
-                            device="cpu",
-                        )
+                        m_path, t_path = _resolve_onnx_model_files(self.model_name)
 
-        return self._model
+                    if not m_path.exists():
+                        raise FileNotFoundError(f"ONNX model file not found: {m_path}")
+                    if not t_path.exists():
+                        raise FileNotFoundError(f"Tokenizer file not found: {t_path}")
+
+                    try:
+                        from tokenizers import Tokenizer
+
+                        tok = Tokenizer.from_file(str(t_path))
+                        tok.enable_truncation(max_length=256)
+                        tok.enable_padding(pad_id=0, pad_token="[PAD]")
+                        self._tokenizer = tok
+                    except Exception as exc:
+                        raise RuntimeError(f"Failed to load tokenizer from {t_path}: {exc}") from exc
+
+                    try:
+                        import onnxruntime as ort
+
+                        opts = ort.SessionOptions()
+                        opts.intra_op_num_threads = self._intra_op_num_threads
+                        opts.inter_op_num_threads = self._inter_op_num_threads
+                        opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+                        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+                        sess = ort.InferenceSession(
+                            str(m_path),
+                            sess_options=opts,
+                            providers=["CPUExecutionProvider"],
+                        )
+                        self._session = sess
+                    except Exception as exc:
+                        raise RuntimeError(f"Failed to load ONNX model session from {m_path}: {exc}") from exc
+
+        return self._session, self._tokenizer
 
     def warmup(self):
-        """Pre-loads the underlying model into memory."""
-        return self._load()
+        """Pre-loads the underlying ONNX session and tokenizer into memory."""
+        self._load()
+        _ = self.embed(["warmup"])
+        return self
 
     @property
     def dimension(self) -> int:
-        return self._load().get_sentence_embedding_dimension()
+        self._load()
+        return 384
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        import torch
 
-        model = self._load()
-        with torch.inference_mode():
-            # normalize_embeddings=True -> unit-length vectors, so ChromaDB's
-            # default L2 distance behaves consistently with cosine similarity.
-            vectors = model.encode(
-                list(texts),
-                batch_size=4,
-                normalize_embeddings=True,
-                show_progress_bar=False,
-                device="cpu",
-            )
-        return vectors.tolist()
+        sess, tok = self._load()
+        import numpy as np
+
+        raw_texts = [str(t) for t in texts]
+        all_embeddings: list[list[float]] = []
+
+        for i in range(0, len(raw_texts), self._batch_size):
+            batch = raw_texts[i : i + self._batch_size]
+            encodings = tok.encode_batch(batch)
+
+            input_ids = np.array([e.ids for e in encodings], dtype=np.int64)
+            attention_mask = np.array([e.attention_mask for e in encodings], dtype=np.int64)
+            token_type_ids = np.array([e.type_ids for e in encodings], dtype=np.int64)
+
+            inputs = {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "token_type_ids": token_type_ids,
+            }
+            outputs = sess.run(None, inputs)
+            last_hidden_state = outputs[0]  # shape: (batch_size, seq_len, 384)
+
+            # Mean pooling with attention-mask weighting:
+            # sum(last_hidden_state * mask) / clamp(sum(mask), min=1e-9)
+            mask_expanded = np.expand_dims(attention_mask, -1).astype(np.float32)
+            sum_embeddings = np.sum(last_hidden_state * mask_expanded, axis=1)
+            sum_mask = np.clip(np.sum(mask_expanded, axis=1), a_min=1e-9, a_max=None)
+            mean_pooled = sum_embeddings / sum_mask
+
+            # L2 normalization: v / clamp(norm, min=1e-12)
+            norms = np.linalg.norm(mean_pooled, ord=2, axis=1, keepdims=True)
+            normalized = mean_pooled / np.clip(norms, a_min=1e-12, a_max=None)
+
+            all_embeddings.extend(normalized.tolist())
+
+        return all_embeddings
+
+
+# Backwards compatibility alias
+SentenceTransformerEmbeddingModel = OnnxEmbeddingModel
 
 
 class DeterministicFakeEmbeddingModel:

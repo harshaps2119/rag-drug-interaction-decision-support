@@ -24,7 +24,7 @@ from app.core.errors import RateLimitExceededError
 from app.core.rate_limiter import InMemoryRateLimiter
 from app.core.request_id import get_request_id
 from app.db import get_session_factory
-from app.rag.embeddings import SentenceTransformerEmbeddingModel
+from app.rag.embeddings import OnnxEmbeddingModel, SentenceTransformerEmbeddingModel
 from app.rag.vector_store import get_collection
 from app.services.llm_service import get_configured_llm_client
 
@@ -46,7 +46,7 @@ def get_db_session():
 def get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
-        _embedding_model = SentenceTransformerEmbeddingModel()
+        _embedding_model = OnnxEmbeddingModel()
     return _embedding_model
 
 
