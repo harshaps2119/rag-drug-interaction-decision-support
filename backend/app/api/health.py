@@ -47,10 +47,7 @@ def health(
         checks["sqlite"] = HealthCheckDetail(status="error", detail=str(exc))
 
     try:
-        if hasattr(collection, "name"):
-            _ = collection.name
-        elif hasattr(collection, "count"):
-            collection.count()
+        collection.get(limit=1)
         checks["chromadb"] = HealthCheckDetail(status="ok")
     except Exception as exc:
         checks["chromadb"] = HealthCheckDetail(status="error", detail=str(exc))
