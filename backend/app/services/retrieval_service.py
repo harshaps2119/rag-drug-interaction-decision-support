@@ -48,6 +48,7 @@ def retrieve(
     top_k: int | None = None,
     rxcui: str | list[str] | None = None,
     section_key: str | None = None,
+    query_embedding: list[float] | None = None,
 ) -> list[RetrievedChunk]:
     """
     Embeds `query_text` and returns the top_k most similar stored chunks,
@@ -89,7 +90,8 @@ def retrieve(
 
         top_k = settings.RAG_DEFAULT_TOP_K
 
-    query_embedding = embedding_model.embed([query_text])[0]
+    if query_embedding is None:
+        query_embedding = embedding_model.embed([query_text])[0]
     where = build_where({"rxcui": rxcui, "section_key": section_key})
 
     raw = vector_query(collection, query_embedding, top_k=top_k, where=where)

@@ -28,6 +28,8 @@ not just assumed correct from documentation.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,6 +63,30 @@ def parse_allowed_origins(origin_setting: str) -> list[str]:
     return list(dict.fromkeys(origins))
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.api.deps import get_embedding_model
+
+    # Warm up embedding model in background thread on startup so request time
+    # doesn't pay the heavy model-loading latency on low-CPU containers.
+    if get_embedding_model not in app.dependency_overrides:
+        model = get_embedding_model()
+        if hasattr(model, "warmup"):
+            import logging
+            import threading
+
+            def _warmup_worker():
+                try:
+                    model.warmup()
+                except Exception as exc:
+                    logging.getLogger("ddi.embeddings").warning(
+                        "Background model warmup failed: %s", exc
+                    )
+
+            threading.Thread(target=_warmup_worker, daemon=True, name="model-warmup").start()
+    yield
+
+
 def create_app() -> FastAPI:
     configure_audit_logging()
 
@@ -69,6 +95,7 @@ def create_app() -> FastAPI:
         description=API_DESCRIPTION,
         version="0.8.0",
         debug=settings.DEBUG,
+        lifespan=lifespan,
     )
 
     # See module docstring for why this order matters.

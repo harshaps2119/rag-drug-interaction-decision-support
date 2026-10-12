@@ -286,7 +286,12 @@ class PairRetrievalEngine:
             search_terms=search_terms,
         )
 
-    def _cached_retrieve(self, query_text: str, rxcui_in: list[str]) -> list[RetrievedChunk]:
+    def _cached_retrieve(
+        self,
+        query_text: str,
+        rxcui_in: list[str],
+        query_embedding: list[float] | None = None,
+    ) -> list[RetrievedChunk]:
         cache_key = f"{sorted(rxcui_in)}::{query_text.lower()}::{self.top_k_per_query}"
         if cache_key in self._query_cache:
             self.cache_hits += 1
@@ -299,6 +304,7 @@ class PairRetrievalEngine:
             query_text,
             top_k=self.top_k_per_query,
             rxcui=rxcui_in,
+            query_embedding=query_embedding,
         )
         self._query_cache[cache_key] = results
         return results
@@ -345,6 +351,29 @@ class PairRetrievalEngine:
         queries_used: list[str] = []
         merged: dict[str, PairEvidenceItem] = {}
 
+        # Precompute embeddings for all uncached queries in a single batch
+        # to minimize PyTorch forward pass overhead on constrained CPUs.
+        uncached_texts: list[str] = []
+        for query_text, qtype in queries:
+            if qtype == "drug_a_specific":
+                rxcui_in = [drug_a.rxcui] if drug_a.rxcui else []
+            elif qtype == "drug_b_specific":
+                rxcui_in = [drug_b.rxcui] if drug_b.rxcui else []
+            else:
+                rxcui_in = [r for r in (drug_a.rxcui, drug_b.rxcui) if r]
+
+            if not rxcui_in:
+                continue
+
+            cache_key = f"{sorted(rxcui_in)}::{query_text.lower()}::{self.top_k_per_query}"
+            if cache_key not in self._query_cache and query_text not in uncached_texts:
+                uncached_texts.append(query_text)
+
+        embeddings_map: dict[str, list[float]] = {}
+        if uncached_texts:
+            computed_vectors = self.embedding_model.embed(uncached_texts)
+            embeddings_map = dict(zip(uncached_texts, computed_vectors))
+
         try:
             for query_text, qtype in queries:
                 queries_used.append(query_text)
@@ -358,7 +387,8 @@ class PairRetrievalEngine:
                 if not rxcui_in:
                     continue
 
-                chunks = self._cached_retrieve(query_text, rxcui_in)
+                q_emb = embeddings_map.get(query_text)
+                chunks = self._cached_retrieve(query_text, rxcui_in, query_embedding=q_emb)
 
                 for chunk in chunks:
                     classification, mentions = classify_chunk(chunk, drug_a, drug_b)

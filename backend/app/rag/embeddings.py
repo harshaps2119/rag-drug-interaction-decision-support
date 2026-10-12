@@ -105,31 +105,40 @@ class SentenceTransformerEmbeddingModel:
     """
 
     def __init__(self, model_name: str | None = None):
+        import threading
+
         self.model_name = model_name or settings.EMBEDDING_MODEL_NAME
         self._model = None
+        self._lock = threading.Lock()
 
     def _load(self):
         if self._model is None:
-            import torch
-            from sentence_transformers import SentenceTransformer
+            with self._lock:
+                if self._model is None:
+                    import torch
+                    from sentence_transformers import SentenceTransformer
 
-            # Limit PyTorch CPU threads for Render's 0.1 CPU allocation
-            # to avoid thread contention, CPU throttling, and excessive memory overhead.
-            if torch.get_num_threads() > 1:
-                torch.set_num_threads(1)
+                    # Limit PyTorch CPU threads for Render's 0.1 CPU allocation
+                    # to avoid thread contention, CPU throttling, and excessive memory overhead.
+                    if torch.get_num_threads() > 1:
+                        torch.set_num_threads(1)
 
-            # Check if model is cached locally; if so, load with local_files_only=True
-            # to avoid network calls and timeout issues at request time.
-            is_cached = _is_model_cached(self.model_name)
-            if is_cached:
-                try:
-                    self._model = SentenceTransformer(self.model_name, local_files_only=True)
-                except Exception:
-                    self._model = SentenceTransformer(self.model_name)
-            else:
-                self._model = SentenceTransformer(self.model_name)
+                    # Check if model is cached locally; if so, load with local_files_only=True
+                    # to avoid network calls and timeout issues at request time.
+                    is_cached = _is_model_cached(self.model_name)
+                    if is_cached:
+                        try:
+                            self._model = SentenceTransformer(self.model_name, local_files_only=True)
+                        except Exception:
+                            self._model = SentenceTransformer(self.model_name)
+                    else:
+                        self._model = SentenceTransformer(self.model_name)
 
         return self._model
+
+    def warmup(self):
+        """Pre-loads the underlying model into memory."""
+        return self._load()
 
     @property
     def dimension(self) -> int:
