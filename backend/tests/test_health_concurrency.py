@@ -211,3 +211,64 @@ def test_batch_embedding_order_and_caching(db_session, chroma_collection):
     assert res2.evidence_status == "pair_specific_evidence_found"
     assert len(tracker.embed_calls) == 0  # 0 calls, 100% cache hit!
     assert engine.cache_hits > 0
+
+
+def test_health_cache_immutability_and_expiration(monkeypatch):
+    """
+    Verifies that:
+    1. Health results are cached when no dependency overrides are present.
+    2. Returned response objects cannot mutate the internal cache.
+    3. The cache expires after _HEALTH_CACHE_TTL_SECONDS.
+    4. Dependency overrides bypass the cache.
+    """
+    from unittest.mock import MagicMock
+    import app.api.health as health_module
+    from app.api.health import health as health_endpoint, _HEALTH_CACHE_TTL_SECONDS
+
+    # Reset cache before test
+    health_module._cached_health = None
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "none")
+
+    mock_app = MagicMock()
+    mock_app.dependency_overrides = {}
+    mock_request = MagicMock()
+    mock_request.app = mock_app
+    mock_request.state.request_id = "test-req-123"
+    mock_request.headers = {}
+
+    mock_session = MagicMock()
+    mock_collection = MagicMock()
+
+    try:
+        # Call 1: live check executes and populates cache
+        resp1 = health_endpoint(request=mock_request, session=mock_session, collection=mock_collection)
+        assert resp1.status == "ok"
+        assert mock_session.execute.call_count == 1
+        assert mock_collection.get.call_count == 1
+
+        # Caller mutates returned response checks
+        resp1.checks["sqlite"].status = "corrupted_by_caller"
+        resp1.checks["sqlite"].detail = "malicious mutation"
+
+        # Call 2: served from cache within TTL, unaffected by mutation
+        resp2 = health_endpoint(request=mock_request, session=mock_session, collection=mock_collection)
+        assert resp2.status == "ok"
+        assert resp2.checks["sqlite"].status == "ok"  # Immune to caller mutation!
+        assert resp2.checks["sqlite"].detail is None
+        assert mock_session.execute.call_count == 1  # No extra db calls
+        assert mock_collection.get.call_count == 1
+
+        # Call 3: after TTL expires, live check executes
+        current_time = time.monotonic()
+        monkeypatch.setattr(time, "monotonic", lambda: current_time + _HEALTH_CACHE_TTL_SECONDS + 1.0)
+        resp3 = health_endpoint(request=mock_request, session=mock_session, collection=mock_collection)
+        assert resp3.status == "ok"
+        assert mock_session.execute.call_count == 2
+        assert mock_collection.get.call_count == 2
+
+        # Call 4: with dependency_overrides active, cache is bypassed
+        mock_app.dependency_overrides = {"some_dep": "override"}
+        resp4 = health_endpoint(request=mock_request, session=mock_session, collection=mock_collection)
+        assert mock_session.execute.call_count == 3
+    finally:
+        health_module._cached_health = None

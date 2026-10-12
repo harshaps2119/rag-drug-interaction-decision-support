@@ -93,7 +93,13 @@ def _is_model_cached(model_name: str) -> bool:
         from huggingface_hub import try_to_load_from_cache
 
         res = try_to_load_from_cache(model_name, "config.json")
-        return isinstance(res, str)
+        if isinstance(res, str):
+            return True
+        if not model_name.startswith("sentence-transformers/"):
+            res = try_to_load_from_cache(f"sentence-transformers/{model_name}", "config.json")
+            if isinstance(res, str):
+                return True
+        return False
     except Exception:
         return False
 
@@ -116,23 +122,34 @@ class SentenceTransformerEmbeddingModel:
             with self._lock:
                 if self._model is None:
                     import torch
-                    from sentence_transformers import SentenceTransformer
 
                     # Limit PyTorch CPU threads for Render's 0.1 CPU allocation
                     # to avoid thread contention, CPU throttling, and excessive memory overhead.
                     if torch.get_num_threads() > 1:
                         torch.set_num_threads(1)
 
+                    from sentence_transformers import SentenceTransformer
+
                     # Check if model is cached locally; if so, load with local_files_only=True
                     # to avoid network calls and timeout issues at request time.
                     is_cached = _is_model_cached(self.model_name)
                     if is_cached:
                         try:
-                            self._model = SentenceTransformer(self.model_name, local_files_only=True)
+                            self._model = SentenceTransformer(
+                                self.model_name,
+                                device="cpu",
+                                local_files_only=True,
+                            )
                         except Exception:
-                            self._model = SentenceTransformer(self.model_name)
+                            self._model = SentenceTransformer(
+                                self.model_name,
+                                device="cpu",
+                            )
                     else:
-                        self._model = SentenceTransformer(self.model_name)
+                        self._model = SentenceTransformer(
+                            self.model_name,
+                            device="cpu",
+                        )
 
         return self._model
 
@@ -153,7 +170,13 @@ class SentenceTransformerEmbeddingModel:
         with torch.inference_mode():
             # normalize_embeddings=True -> unit-length vectors, so ChromaDB's
             # default L2 distance behaves consistently with cosine similarity.
-            vectors = model.encode(list(texts), normalize_embeddings=True, show_progress_bar=False)
+            vectors = model.encode(
+                list(texts),
+                batch_size=4,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+                device="cpu",
+            )
         return vectors.tolist()
 
 

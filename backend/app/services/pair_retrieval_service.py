@@ -170,7 +170,9 @@ def generate_pair_queries(drug_a: DrugRef, drug_b: DrugRef) -> list[tuple[str, s
     for a_term in a_variants:
         for b_term in b_variants:
             add(f"{a_term} and {b_term} interaction", "pair_specific")
-            add(f"{a_term} {b_term}", "pair_specific")
+
+    if a_variants and b_variants:
+        add(f"{a_variants[0]} {b_variants[0]}", "pair_specific")
 
     for a_term in a_variants[:1]:
         add(f"{a_term} drug interactions", "drug_a_specific")

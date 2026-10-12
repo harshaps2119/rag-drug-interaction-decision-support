@@ -148,6 +148,61 @@ def test_generate_pair_queries_is_bounded_not_combinatorially_explosive():
     assert len(queries) < 20  # bounded despite many synonyms available
 
 
+def test_generate_pair_queries_brand_generic_coverage():
+    """
+    Regression test: ensures generate_pair_queries generates all intended
+    pair-specific, drug_a_specific, and drug_b_specific queries across brand
+    and generic variants, while keeping the total query set bounded to 9.
+    """
+    from app.schemas.evidence_assessment import DrugRef
+
+    a = DrugRef(
+        input_name="warfarin",
+        normalized_name="warfarin",
+        resolved=True,
+        search_terms=["warfarin", "Coumadin"],
+    )
+    b = DrugRef(
+        input_name="ibuprofen",
+        normalized_name="ibuprofen",
+        resolved=True,
+        search_terms=["ibuprofen", "Advil"],
+    )
+
+    queries = generate_pair_queries(a, b)
+    query_texts = [q for q, _ in queries]
+    query_dict = dict(queries)
+
+    # 1. All pair combinations with brand synonyms must be present
+    assert "warfarin and ibuprofen interaction" in query_dict
+    assert query_dict["warfarin and ibuprofen interaction"] == "pair_specific"
+    assert "warfarin and Advil interaction" in query_dict
+    assert query_dict["warfarin and Advil interaction"] == "pair_specific"
+    assert "Coumadin and ibuprofen interaction" in query_dict
+    assert query_dict["Coumadin and ibuprofen interaction"] == "pair_specific"
+    assert "Coumadin and Advil interaction" in query_dict
+    assert query_dict["Coumadin and Advil interaction"] == "pair_specific"
+
+    # 2. Shorthand pair query for primary names must be present
+    assert "warfarin ibuprofen" in query_dict
+    assert query_dict["warfarin ibuprofen"] == "pair_specific"
+
+    # 3. Both single-drug interaction queries for drug A must be present
+    assert "warfarin drug interactions" in query_dict
+    assert query_dict["warfarin drug interactions"] == "drug_a_specific"
+    assert "warfarin interaction warnings" in query_dict
+    assert query_dict["warfarin interaction warnings"] == "drug_a_specific"
+
+    # 4. Both single-drug interaction queries for drug B must be present
+    assert "ibuprofen drug interactions" in query_dict
+    assert query_dict["ibuprofen drug interactions"] == "drug_b_specific"
+    assert "ibuprofen interaction warnings" in query_dict
+    assert query_dict["ibuprofen interaction warnings"] == "drug_b_specific"
+
+    # 5. Exactly 9 bounded, deduplicated queries generated
+    assert len(queries) == 9
+
+
 # ---------------------------------------------------------------------------
 # Tests: synonym handling
 # ---------------------------------------------------------------------------

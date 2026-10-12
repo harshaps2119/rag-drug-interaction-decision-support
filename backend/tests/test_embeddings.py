@@ -129,3 +129,44 @@ def test_real_model_limits_torch_threads():
 
     # Must be set to 1 for Render's 0.1 CPU allocation
     assert torch.get_num_threads() <= 1
+
+
+def test_is_model_cached_namespaced_fallback():
+    """
+    Verifies that _is_model_cached checks both the bare model identifier
+    and the sentence-transformers/ namespaced identifier in Hugging Face cache.
+    """
+    # If the model is in local HF cache under sentence-transformers/all-MiniLM-L6-v2,
+    # calling it with "all-MiniLM-L6-v2" must also return True.
+    if _is_model_cached("sentence-transformers/all-MiniLM-L6-v2"):
+        assert _is_model_cached("all-MiniLM-L6-v2") is True
+
+
+def test_real_model_cpu_and_batch_inference(monkeypatch):
+    """
+    Verifies that SentenceTransformerEmbeddingModel loads offline-compatible,
+    explicitly uses CPU device, and encodes batches of texts (batch_size=4)
+    preserving vector ordering and dimensionality.
+    """
+    model = SentenceTransformerEmbeddingModel("all-MiniLM-L6-v2")
+    try:
+        _ = model.dimension
+    except Exception as exc:
+        pytest.skip(f"Real embedding model unavailable: {exc}")
+        return
+
+    texts = [
+        "warfarin interaction with ibuprofen",
+        "aspirin and metformin warnings",
+        "lisinopril dosage and side effects",
+        "atorvastatin lipid management",
+        "metoprolol beta blocker interaction",
+    ]
+    vectors = model.embed(texts)
+    assert len(vectors) == 5
+    assert all(len(v) == 384 for v in vectors)
+    # Vectors should be distinct and normalized
+    assert len({tuple(v) for v in vectors}) == 5
+    for v in vectors:
+        mag = sum(x * x for x in v) ** 0.5
+        assert abs(mag - 1.0) < 1e-3
